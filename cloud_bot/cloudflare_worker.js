@@ -872,27 +872,62 @@ async function sendChartCoinPicker(cfg, chatId) {
 }
 
 async function fetchKlines220(sym, tf) {
-  const hdrs = { 'User-Agent': 'Mozilla/5.0 (compatible; CHICKTRADE/3.3)' };
+  const hdrs = { 'User-Agent': 'curl/8.4.0', Accept: 'application/json' };
+  const base = sym.replace(/USDT$/i, '').toUpperCase();
+  const errs = [];
+
   // 1. Binance Vision (global CDN) & Binance Futures
   const binanceUrls = [
-    `https://data-api.binance.vision/api/v3/klines?symbol=${encodeURIComponent(sym)}&interval=${encodeURIComponent(tf)}&limit=220`,
-    `https://fapi.binance.com/fapi/v1/klines?symbol=${encodeURIComponent(sym)}&interval=${encodeURIComponent(tf)}&limit=220`,
+    ['BV', `https://data-api.binance.vision/api/v3/klines?symbol=${encodeURIComponent(sym)}&interval=${encodeURIComponent(tf)}&limit=220`],
+    ['BF', `https://fapi.binance.com/fapi/v1/klines?symbol=${encodeURIComponent(sym)}&interval=${encodeURIComponent(tf)}&limit=220`],
   ];
-  for (const u of binanceUrls) {
+  for (const [tag, u] of binanceUrls) {
     try {
       const res = await fetch(u, { headers: hdrs });
       if (res.ok) {
         const arr = await res.json();
         if (Array.isArray(arr) && arr.length >= 20) return arr;
       }
-    } catch {}
+      errs.push(`${tag}:${res.status}`);
+    } catch { errs.push(`${tag}:err`); }
   }
 
-  // 2. OKX Public Perpetual Swap API (never geo-blocked on Cloudflare US/EU/Asia POPs)
+  // 2. KuCoin Public API (works cleanly from Cloudflare Workers globally)
   try {
-    const base = sym.replace(/USDT$/i, '');
+    const kcTf = { '15m': '15min', '30m': '30min', '1h': '1hour', '4h': '4hour' }[tf] || '1hour';
+    const kcUrl = `https://api.kucoin.com/api/v1/market/candles?type=${encodeURIComponent(kcTf)}&symbol=${encodeURIComponent(base)}-USDT`;
+    const res = await fetch(kcUrl, { headers: hdrs });
+    if (res.ok) {
+      const j = await res.json();
+      if (j && Array.isArray(j.data) && j.data.length >= 20) {
+        // KuCoin format: [time_sec, open, close, high, low, vol, turnover] newest-first
+        return j.data.slice(0, 220).reverse().map(c => [Number(c[0]) * 1000, c[1], c[3], c[4], c[2]]);
+      }
+    }
+    errs.push(`KC:${res.status}`);
+  } catch { errs.push('KC:err'); }
+
+  // 3. Kraken Public OHLC API (US-friendly, never 451 on Cloudflare US POPs)
+  try {
+    const krTf = { '15m': 15, '30m': 30, '1h': 60, '4h': 240 }[tf] || 60;
+    const krPair = (base === 'BTC' ? 'XBT' : base) + 'USD';
+    const krUrl = `https://api.kraken.com/0/public/OHLC?pair=${encodeURIComponent(krPair)}&interval=${krTf}`;
+    const res = await fetch(krUrl, { headers: hdrs });
+    if (res.ok) {
+      const j = await res.json();
+      const firstKey = j && j.result ? Object.keys(j.result).find(k => k !== 'last') : null;
+      const arr = firstKey ? j.result[firstKey] : null;
+      if (Array.isArray(arr) && arr.length >= 20) {
+        return arr.slice(-220).map(c => [Number(c[0]) * 1000, String(c[1]), String(c[2]), String(c[3]), String(c[4])]);
+      }
+    }
+    errs.push(`KR:${res.status}`);
+  } catch { errs.push('KR:err'); }
+
+  // 4. OKX Public Perpetual Swap API
+  try {
     const okxBar = { '15m': '15m', '30m': '30m', '1h': '1H', '4h': '4H' }[tf] || '1H';
-    const okxUrl = `https://www.okx.com/api/v5/market/candles?instId=${encodeURIComponent(base)}-USDT-SWAP&bar=${encodeURIComponent(okxBar)}&limit=220`;
+    const okxUrl = `https://www.okx.com/api/v5/market/candles?instId=${encodeURIComponent(base)}-USDT-SWAP&bar=${encodeURIComponent(okxBar)}&limit=100`;
     const res = await fetch(okxUrl, { headers: hdrs });
     if (res.ok) {
       const j = await res.json();
@@ -900,11 +935,11 @@ async function fetchKlines220(sym, tf) {
         return j.data.slice().reverse().map(c => [Number(c[0]), c[1], c[2], c[3], c[4]]);
       }
     }
-  } catch {}
+    errs.push(`OKX:${res.status}`);
+  } catch { errs.push('OKX:err'); }
 
-  // 3. Gate.io Public Futures API fallback
+  // 5. Gate.io Public Futures API
   try {
-    const base = sym.replace(/USDT$/i, '');
     const gateUrl = `https://api.gateio.ws/api/v4/futures/usdt/candlesticks?contract=${encodeURIComponent(base)}_USDT&interval=${encodeURIComponent(tf)}&limit=220`;
     const res = await fetch(gateUrl, { headers: hdrs });
     if (res.ok) {
@@ -913,9 +948,10 @@ async function fetchKlines220(sym, tf) {
         return arr.map(c => [Number(c.t) * 1000, String(c.o), String(c.h), String(c.l), String(c.c)]);
       }
     }
-  } catch {}
+    errs.push(`GT:${res.status}`);
+  } catch { errs.push('GT:err'); }
 
-  throw new Error(`Không tải được dữ liệu nến cho ${sym} ${tf} (Binance/OKX/Gate)`);
+  throw new Error(`Không tải được nến ${sym} ${tf} (${errs.join(', ')})`);
 }
 
 function computeEmaArr(closes, period) {
