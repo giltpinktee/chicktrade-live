@@ -296,6 +296,37 @@
   .b-short { background: #FFF1F2; color: #DC2626; border: 1px solid #FECDD3; }
   .b-tf { background: #F0F9FF; color: #0369A1; border: 1px solid #BAE6FD; }
   .b-tp1 { background: #FFFBEB; color: #B45309; border: 1px solid #FDE68A; }
+  @keyframes legendary-shimmer {
+    0% { transform: translateX(-140%); }
+    45%, 100% { transform: translateX(180%); }
+  }
+  .must-badge {
+    position: relative;
+    display: inline-block;
+    overflow: hidden;
+    padding: 1px 6px;
+    border-radius: 5px;
+    font-size: 9.8px;
+    font-weight: 700;
+    letter-spacing: 0.2px;
+    margin-left: 4px;
+    vertical-align: middle;
+    background: linear-gradient(135deg, #F59E0B 0%, #EA580C 50%, #D97706 100%);
+    color: #FFFFFF;
+    border: 1px solid #FDE68A;
+    box-shadow: 0 2px 8px rgba(245, 158, 11, 0.35);
+  }
+  .must-badge::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 60%;
+    height: 100%;
+    background: linear-gradient(110deg, transparent 20%, rgba(255, 255, 255, 0.65) 50%, transparent 80%);
+    animation: legendary-shimmer 3.2s ease-in-out infinite;
+    pointer-events: none;
+  }
 
   .tick-up { animation: flashGreen 0.7s ease; }
   .tick-dn { animation: flashRed 0.7s ease; }
@@ -636,10 +667,12 @@
       const pnlCol = totLivePnl >= 0 ? '#059669' : '#DC2626';
       const dirBadge = p.direction === 'LONG' ? '<span class="badge b-long">LONG</span>' : '<span class="badge b-short">SHORT</span>';
       const tp1Tag = p.tp1_hit ? ' <span class="badge b-tp1">TP1 ✓ Đã dời SL</span>' : '';
+      const mustBadge = p.is_must_order ? ' <span class="must-badge">THẤY LÀ QUẤT</span>' : '';
+      const pwrStr = p.profit_wr_pct !== undefined ? `Thắng tiền <b style="color:#059669;">${Number(p.profit_wr_pct).toFixed(1)}%</b> · WR <b>${Number(p.wr_pct || 0).toFixed(1)}%</b>` : '';
 
       return `
         <tr>
-          <td><strong>${p.symbol}</strong> <span class="badge b-tf">${p.tf}</span><br><small style="color:#64748B;">${p.setup_code} ${dirBadge}${tp1Tag}</small></td>
+          <td><strong>${p.symbol}</strong> <span class="badge b-tf">${p.tf}</span><br><small style="color:#475569;">${p.setup_code} ${dirBadge}${mustBadge}${tp1Tag}</small>${pwrStr ? `<br><small class="num" style="color:#64748B;">${pwrStr}</small>` : ''}</td>
           <td class="num">Vào: <b>${fmtPx(p.entry_price)}</b><br>Live: <b style="color:#0369A1;">${fmtPx(curPx)}</b></td>
           <td class="num" style="color:${pnlCol};font-weight:800;">${fmtUsd(totLivePnl, true)}<br><small>(${unrPct >= 0 ? '+' : ''}${unrPct.toFixed(2)}%)</small></td>
           <td class="num">SL: <b style="color:#DC2626;">${fmtPx(p.active_sl_price)}</b><br>TP1: <b>${fmtPx(p.tp1_price)}</b> · TP2: <b style="color:#059669;">${fmtPx(p.tp2_price)}</b></td>
@@ -710,9 +743,11 @@
       const win = Number(t.pnl_usd) > 0;
       const pnlCol = win ? '#059669' : '#DC2626';
       const dirBadge = t.direction === 'LONG' ? '<span class="badge b-long">LONG</span>' : '<span class="badge b-short">SHORT</span>';
+      const mustBadge = t.is_must_order ? ' <span class="must-badge">THẤY LÀ QUẤT</span>' : '';
+      const pwrStr = t.profit_wr_pct !== undefined ? `Thắng tiền <b style="color:#059669;">${Number(t.profit_wr_pct).toFixed(1)}%</b> · WR <b>${Number(t.wr_pct || 0).toFixed(1)}%</b>` : '';
       return `
         <tr>
-          <td><strong>${t.symbol}</strong> <span class="badge b-tf">${t.tf}</span><br><small style="color:#64748B;">${t.setup_code} ${dirBadge}</small></td>
+          <td><strong>${t.symbol}</strong> <span class="badge b-tf">${t.tf}</span><br><small style="color:#475569;">${t.setup_code} ${dirBadge}${mustBadge}</small>${pwrStr ? `<br><small class="num" style="color:#64748B;">${pwrStr}</small>` : ''}</td>
           <td class="num">${fmtPx(t.entry_price)} &rarr; <b>${fmtPx(t.exit_price)}</b></td>
           <td><b>${t.outcome}</b><br><small class="num" style="color:#64748B;">${t.closed_utc}</small></td>
           <td class="num" style="color:${pnlCol};font-weight:800;">${fmtUsd(t.pnl_usd, true)}</td>

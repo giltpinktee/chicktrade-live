@@ -485,6 +485,40 @@ def _init_state(turbo_enabled: bool) -> dict:
     }
 
 
+def compute_must_order_score(r: dict) -> float:
+    """Compute composite THẤY LÀ QUẤT score matching core/build_v21_ui.py."""
+    p = r.get("prior_1y", {})
+    net_u = float(p.get("net_u", 0.0))
+    pwr = float(p.get("profit_wr_pct", 0.0))
+    pf = float(p.get("pf_1y", 0.0))
+    st = str(r.get("status", ""))
+    bonus = 24.0 if st == "CORE" else (12.0 if st == "CORE_EXP" else (5.0 if st in ("SCOUT", "HOT_ADAPTIVE", "SCOUT_EXP") else 0.0))
+    return bonus + (net_u / 90.0) * 55.0 + (pwr / 100.0) * 45.0 + min(pf, 3.5) * 2.0
+
+
+def compute_top_must_keys(rules_list: List[dict], top_n: int = 15) -> set:
+    """Select Top 15 setups as THẤY LÀ QUẤT (is_must_order)."""
+    ranked = sorted(rules_list, key=lambda r: -compute_must_order_score(r))
+    return {(r["coin"], r["tf"], r["setup_code"]) for r in ranked[:top_n]}
+
+
+def enrich_positions_metadata(
+    state: dict,
+    rules_map: Dict[Tuple[str, str, str], dict],
+    top_must_keys: set,
+) -> None:
+    """Backfill profit_wr_pct, wr_pct, and is_must_order on existing open & closed records."""
+    for group_key in ("open_positions", "closed_trades"):
+        for item in state.get(group_key, []):
+            k = (item.get("symbol"), item.get("tf"), item.get("setup_code"))
+            r = rules_map.get(k)
+            if r is not None:
+                p = r.get("prior_1y", {})
+                item["profit_wr_pct"] = round(float(p.get("profit_wr_pct", 0.0)), 1)
+                item["wr_pct"] = round(float(p.get("wr_pct", 0.0)), 1)
+                item["is_must_order"] = bool(k in top_must_keys)
+
+
 def load_or_init_state(turbo_enabled: bool) -> dict:
     if os.path.exists(OUT_JSON):
         try:
@@ -547,8 +581,10 @@ def update_open_positions(
                         acc["equity"] = round(float(acc["equity"]) + pnl1, 2)
                         acc["peak_equity"] = max(float(acc["peak_equity"]), float(acc["equity"]))
                         pos["active_sl_price"] = pos["leg2_sl_price"]
+                        must_tag = " · 🔥 <b>THẤY LÀ QUẤT</b>" if pos.get("is_must_order") else ""
                         events.append(
-                            f"🎯 <b>CHẠM TP1 — DỜI SL CHÂN 2</b> | {sym} ({tf}) {pos['direction']}\n"
+                            f"🎯 <b>CHẠM TP1 — DỜI SL CHÂN 2</b> | {sym} ({tf}) {pos['direction']}{must_tag}\n"
+                            f"Thắng tiền: <b>{pos.get('profit_wr_pct', 0):.1f}%</b> | WR: <b>{pos.get('wr_pct', 0):.1f}%</b>\n"
                             f"Chốt 50% @ <code>{pos['tp1_price']:.4f}</code> (+${pnl1:.2f}) · Dời SL → <code>{pos['active_sl_price']:.4f}</code>"
                         )
                         if (d == 1 and bh >= pos["tp2_price"]) or (d == -1 and bl <= pos["tp2_price"]):
@@ -635,6 +671,9 @@ def update_open_positions(
             "exit_price": round(close_px, 6),
             "qty": pos["qty"],
             "vol_mult": pos["vol_mult"],
+            "profit_wr_pct": pos.get("profit_wr_pct", 0.0),
+            "wr_pct": pos.get("wr_pct", 0.0),
+            "is_must_order": bool(pos.get("is_must_order", False)),
             "outcome": closed_outcome,
             "pnl_usd": tot_pnl,
             "opened_utc": pos["opened_utc"],
@@ -645,8 +684,10 @@ def update_open_positions(
         state["equity_curve"] = state["equity_curve"][-1000:]
 
         emoji = "✅" if tot_pnl > 0 else "❌"
+        must_tag = " · 🔥 <b>THẤY LÀ QUẤT</b>" if pos.get("is_must_order") else ""
         events.append(
-            f"{emoji} <b>ĐÓNG LỆNH ({closed_outcome})</b> | {sym} ({tf}) {pos['setup_code']} {pos['direction']}\n"
+            f"{emoji} <b>ĐÓNG LỆNH ({closed_outcome})</b> | {sym} ({tf}) {pos['setup_code']} {pos['direction']}{must_tag}\n"
+            f"Thắng tiền: <b>{pos.get('profit_wr_pct', 0):.1f}%</b> | WR: <b>{pos.get('wr_pct', 0):.1f}%</b>\n"
             f"PnL: <b>{tot_pnl:+.2f} USD</b> · Equity: <b>${acc['equity']:,.2f}</b> (Bậc {acc['step']}/50)"
         )
 
@@ -660,6 +701,7 @@ def open_new_positions(
     filters: Dict[str, Dict[str, float]],
     now_ms: int,
     events: List[str],
+    top_must_keys: Optional[set] = None,
 ) -> None:
     """Open qualifying signals with 20x Cross Margin, stepSize floor, minNotional & S2 liq cap."""
     acc = state["account"]
@@ -746,6 +788,10 @@ def open_new_positions(
 
         worst_sl_usd = round(qty * (sl_u * u) * 1.05, 2)
         pos_id = f"{sym}_{tf}_{sig['setup_type']}_{sig['signal_ts_ms']}"
+        prior = rule.get("prior_1y", {})
+        pwr_pct = round(float(prior.get("profit_wr_pct", 0.0)), 1)
+        wr_pct = round(float(prior.get("wr_pct", 0.0)), 1)
+        is_must = bool(top_must_keys and (sym, tf, sig["setup_type"]) in top_must_keys)
         pos_obj = {
             "id": pos_id,
             "symbol": sym,
@@ -758,6 +804,9 @@ def open_new_positions(
             "notional_usd": round(notional, 2),
             "vol_mult": round(eff_m, 2),
             "base_vol": float(rule["adaptive_volume"]["init_vol_mult"]),
+            "profit_wr_pct": pwr_pct,
+            "wr_pct": wr_pct,
+            "is_must_order": is_must,
             "buffer_used": int(cur_buf),
             "u_price": round(u, 6),
             "exit_arch": rule["exit_arch"],
@@ -779,8 +828,10 @@ def open_new_positions(
         }
         state["open_positions"].append(pos_obj)
         dt["trades"] = int(dt["trades"]) + 1
+        must_tag = " · 🔥 <b>THẤY LÀ QUẤT</b>" if is_must else ""
         events.append(
-            f"🚀 <b>MỞ LỆNH MỚI</b> | {sym} ({tf}) <b>{sig['setup_type']}</b> [{sig['direction']}]\n"
+            f"🚀 <b>MỞ LỆNH MỚI</b> | {sym} ({tf}) <b>{sig['setup_type']}</b> [{sig['direction']}]{must_tag}\n"
+            f"Thắng tiền: <b>{pwr_pct:.1f}%</b> | WR: <b>{wr_pct:.1f}%</b>\n"
             f"Entry: <code>{p_sig:.4f}</code> · Qty: <code>{qty}</code> (~${notional:,.0f} @ 20×)\n"
             f"SL: <code>{sl_px:.4f}</code> · TP1: <code>{tp1_px:.4f}</code> · TP2: <code>{tp2_px:.4f}</code>"
         )
@@ -797,12 +848,14 @@ def main():
         core_cfg = json.load(f)
     unit_cfg = core_cfg.get("unit_config", {})
     rules_map = {(r["coin"], r["tf"], r["setup_code"]): r for r in core_cfg["rules"]}
+    top_must_keys = compute_top_must_keys(core_cfg["rules"], top_n=15)
 
     turbo_enabled = os.environ.get("TURBO_ENABLED", "0").strip().lower() in ("1", "true", "yes")
     now_dt = datetime.now(timezone.utc)
     now_ms = int(now_dt.timestamp() * 1000)
 
     state = load_or_init_state(turbo_enabled)
+    enrich_positions_metadata(state, rules_map, top_must_keys)
     filters = fetch_exchange_filters()
     closed_data, live_prices = fetch_all_market_data(now_ms)
     rates_rows, u_price_map = compute_u3_rates(closed_data, live_prices, unit_cfg)
@@ -810,7 +863,7 @@ def main():
     events: List[str] = []
     update_open_positions(state, closed_data, live_prices, events)
     signals = detect_latest_signals(closed_data, rules_map)
-    open_new_positions(state, signals, u_price_map, filters, now_ms, events)
+    open_new_positions(state, signals, u_price_map, filters, now_ms, events, top_must_keys=top_must_keys)
 
     acc = state["account"]
     acc["roi_pct"] = round((float(acc["equity"]) / float(acc["initial_capital"]) - 1.0) * 100.0, 2)
