@@ -155,12 +155,15 @@ function handleMessage_(msg) {
   const rawText = (msg.text || '').trim();
   const firstToken = rawText.split(/\s+/)[0].toLowerCase().replace(/@[a-z0-9_]+$/i, '');
 
-  // Map quick-reply keyboard labels to commands
+  // Map quick-reply keyboard labels to commands (supports both 4-col compact & legacy labels)
   let cmd = firstToken;
   if (rawText === '📊 Tài sản') cmd = '/status';
-  else if (rawText === '📂 Lệnh đang mở') cmd = '/orders';
-  else if (rawText === '📐 Tỷ lệ 1U') cmd = '/1u';
+  else if (rawText === '📂 Lệnh đang mở' || rawText === '📂 Lệnh mở') cmd = '/orders';
+  else if (rawText === '📐 Tỷ lệ 1U' || rawText === '📐 1U (4H)') cmd = '/1u';
   else if (rawText === '📈 Thống kê') cmd = '/stats';
+  else if (rawText === '🔔 Bật tin') cmd = '/subscribe';
+  else if (rawText === '🔕 Tắt tin') cmd = '/mute';
+  else if (rawText === '🔄 Menu') cmd = '/menu';
 
   if (cmd === '/start' || cmd === '/menu') {
     upsertSubscriber_(msg.chat, msg.from, false);
@@ -387,15 +390,24 @@ function buildOpenAppInlineMarkup_(chatId, url) {
 }
 
 function buildReplyKeyboard_(chatId) {
-  const rows = [
-    [{ text: '📊 Tài sản' }, { text: '📂 Lệnh đang mở' }],
-    [{ text: '📐 Tỷ lệ 1U' }, { text: '📈 Thống kê' }],
+  const row1 = [
+    { text: '📊 Tài sản' },
+    { text: '📂 Lệnh mở' },
+    { text: '📐 1U (4H)' },
+    { text: '📈 Thống kê' },
   ];
-  if (isPrivateChat_(chatId) && CONFIG.WEBAPP_URL && CONFIG.WEBAPP_URL.startsWith('https://')) {
-    rows.push([{ text: '🚀 Mở Popup Mini App Live', web_app: { url: CONFIG.WEBAPP_URL } }]);
-  }
+  const popupBtn =
+    isPrivateChat_(chatId) && CONFIG.WEBAPP_URL && CONFIG.WEBAPP_URL.startsWith('https://')
+      ? { text: '🚀 Popup', web_app: { url: CONFIG.WEBAPP_URL } }
+      : { text: '🔄 Menu' };
+  const row2 = [
+    popupBtn,
+    { text: '🔔 Bật tin' },
+    { text: '🔕 Tắt tin' },
+    { text: '🔄 Menu' },
+  ];
   return {
-    keyboard: rows,
+    keyboard: [row1, row2],
     resize_keyboard: true,
     is_persistent: true,
   };
