@@ -1,11 +1,13 @@
-"""Build CHICKTRADE v3.0 36-Month Showcase HTML Report (U3_HTF_MACRO_ATR — 58 Setups).
+"""Build CHICKTRADE v3.0 36-Month Showcase HTML Report (U3_HTF_MACRO_ATR + S2 50-Step + Liquidity Cap).
 
 36-Month Compounding Showcase (01/11/2023 -> 31/10/2026) with True Walk-Forward Blind Year 3:
   - 58 setups are discovered strictly on Train 2Y (2023-11-01 -> 2025-10-31) under
     U3_HTF_MACRO_ATR (1U anchored to 4H EMA20 macro ATR * gamma_tf, 100% zero lookahead).
-  - Blind Year 3 (2025-11-01 -> 2026-10-31) is 100% Out-Of-Sample (+40.29% Auto-Turbo / +28.82% Bao 400G).
-  - Full 36M continuous compounding: +2,656.7% ($275,669, MaxDD -10.05%, Calmar 264.4) Auto-Turbo 250G
-    and +1,723.5% ($182,354, MaxDD -8.13%, Calmar 211.9) Bao 400G.
+  - Compounding: S2_LOCKED_HYSTERESIS_10PCT (50 steps, +8%/step, -10% hysteresis) +
+    live per-trade liquidity cap ($300,000 BTC/ETH, $150,000 Altcoins).
+  - Blind Year 3 (2025-11-01 -> 2026-10-31) is 100% Out-Of-Sample (+37.13% Auto-Turbo / +28.57% Bao 400G).
+  - Full 36M continuous compounding: +9,934.9% ($1,003,492, MaxDD -13.33%, Calmar 745.5) Auto-Turbo 250G
+    and +4,510.3% ($461,028, MaxDD -10.05%, Calmar 448.8) Bao 400G.
 
 Outputs ONLY to:
   - e:\CHICKTRADE\core\reports\chicktrade_3year_showcase_report.html
@@ -26,16 +28,15 @@ for p in (ROOT, SCRIPTS_DIR, os.path.join(ROOT, "old", "scripts")):
     if p not in sys.path:
         sys.path.insert(0, p)
 
-from config import BacktestConfig, RiskConfig
-from risk.compounding import CompoundingManager
+from config import BacktestConfig
 from run_full_216_exit_sweetspot import COIN_CAL, sim_exit_arch
 from run_full_3ema_storm_guard import build_cooldown_mask, compute_storm_flags, generate_all_4_touches
 from run_invariant_1u_benchmark import (
     GAMMA_4H,
     discover_dual_split_rules_arrays,
     precompute_invariant_u_arrays,
-    sim_portfolio_u_arrays,
 )
+from run_50step_s2_check import sim_s2_steps
 from run_master_6coin_html import SIX_COINS
 from run_pct_vs_atr_3year_study import filter_sigs, load_3year_cached_m5
 from run_research_mtf import resample_ohlcv
@@ -55,10 +56,12 @@ def sim_u3_with_trace(
     hard_floor_eq: float = 11_000.0,
     core_only_sl_trigger: bool = True,
     window_start_ts: pd.Timestamp = pd.Timestamp("2023-11-01 00:00:00", tz="UTC"),
+    max_step: int = 50,
+    apply_liq_cap: bool = True,
 ) -> Tuple[dict, List[dict], List[dict]]:
-    """Mirror sim_portfolio_u_arrays identically while capturing exact timestamped equity & DD curve."""
-    rcfg = RiskConfig(initial_capital=10_000.0, buffer_units=base_buffer, max_concurrent_trades=5, max_trades_per_day=10)
-    comp = CompoundingManager(rcfg)
+    """Mirror sim_s2_steps identically while capturing exact timestamped equity & DD curve."""
+    step = 0
+    tier_capital = 10_000.0
     equity = 10_000.0
     peak_eq = equity
     open_cap = 4.25
@@ -85,7 +88,7 @@ def sim_u3_with_trace(
     port_paused_until = pd.Timestamp("1970-01-01", tz="UTC")
 
     def settle(now_ts: pd.Timestamp):
-        nonlocal equity, peak_eq, port_consec_sl, port_shadow_paused, port_paused_until, in_turbo
+        nonlocal equity, peak_eq, step, tier_capital, port_consec_sl, port_shadow_paused, port_paused_until, in_turbo
         keep, done = [], []
         for ex_ts, tr in active:
             (done if ex_ts <= now_ts else keep).append((ex_ts, tr))
@@ -93,7 +96,12 @@ def sim_u3_with_trace(
         for ex_ts, tr in done:
             equity += tr["pnl"]
             peak_eq = max(peak_eq, equity)
-            comp.update_equity(equity, ex_ts)
+            while step < max_step and equity >= 10_000.0 * (1.08 ** (step + 1)):
+                step += 1
+                tier_capital = 10_000.0 * (1.08 ** step)
+            while step > 0 and equity < tier_capital * 0.90:
+                step -= 1
+                tier_capital = 10_000.0 * (1.08 ** step)
             dk = tr["dk"]
             daily_pnl[dk] = daily_pnl.get(dk, 0.0) + tr["pnl"]
 
@@ -165,12 +173,12 @@ def sim_u3_with_trace(
         if eff_m < 0.20:
             continue
 
+        sb = tier_capital
         cur_buf = base_buffer
         if auto_turbo_buffer is not None and in_turbo:
             cur_buf = auto_turbo_buffer
-            sb_test = min(comp.tier_capital, equity)
             open_sl_risk = sum(tr["worst_sl_usd"] for _, tr in active)
-            new_sl_risk = (sb_test * eff_m) * (rule["sl_u"] / cur_buf) * 1.05
+            new_sl_risk = (sb * eff_m) * (rule["sl_u"] / cur_buf) * 1.05
             if equity - (open_sl_risk + new_sl_risk) < hard_floor_eq:
                 cur_buf = base_buffer
 
@@ -179,10 +187,13 @@ def sim_u3_with_trace(
             sig.bar_idx, sig.entry_price, sig.direction, u,
             rule["sl_u"], rule["tp1_u"], rule["tp2_u"], rule["arch"], rule["l2_u"],
         )
-        sb = min(comp.tier_capital, equity)
         qty = (sb * eff_m) / (cur_buf * u)
+        if apply_liq_cap:
+            liq_cap = 300_000.0 if sig.symbol in ("BTCUSDT", "ETHUSDT") else 150_000.0
+            if qty * sig.entry_price > liq_cap:
+                qty = liq_cap / sig.entry_price
         pnl = nu * u * qty
-        worst_sl_usd = (sb * eff_m) * (rule["sl_u"] / cur_buf) * 1.05
+        worst_sl_usd = qty * (rule["sl_u"] * u) * 1.05
 
         ex_i = min(sig.bar_idx + (4 if out == "SL" else 8), len(df) - 1)
         ex_ts = pd.Timestamp(df["timestamp"].iloc[ex_i])
@@ -419,24 +430,30 @@ def main():
     assert n_setups == 58, f"Expected 58 v3.0 setups, got {n_setups}"
     print(f"Trained {n_setups} v3.0 setups strictly on Train 2Y (11/2023 -> 10/2025) under U3_HTF_MACRO_ATR.")
 
-    # 2. Full 36M compounding curve traces + parity assertions
-    f36_400, _, pts_400 = sim_u3_with_trace(tf_dfs_map, sigs_36m, wf_rules, u3_arrays, 400.0, None, window_start_ts=ts_y1_start)
-    f36_250, _, pts_250 = sim_u3_with_trace(tf_dfs_map, sigs_36m, wf_rules, u3_arrays, 400.0, 250.0, window_start_ts=ts_y1_start)
+    # 2. Full 36M compounding curve traces + parity assertions (S2 50-Step + Liquidity Cap)
+    f36_400, _, pts_400 = sim_u3_with_trace(
+        tf_dfs_map, sigs_36m, wf_rules, u3_arrays, 400.0, None,
+        window_start_ts=ts_y1_start, max_step=50, apply_liq_cap=True,
+    )
+    f36_250, _, pts_250 = sim_u3_with_trace(
+        tf_dfs_map, sigs_36m, wf_rules, u3_arrays, 400.0, 250.0,
+        window_start_ts=ts_y1_start, max_step=50, apply_liq_cap=True,
+    )
 
-    ref_400 = sim_portfolio_u_arrays(tf_dfs_map, sigs_36m, wf_rules, "U3_HTF_MACRO_ATR", u3_arrays, None, 400.0, None)
-    ref_250 = sim_portfolio_u_arrays(tf_dfs_map, sigs_36m, wf_rules, "U3_HTF_MACRO_ATR", u3_arrays, None, 400.0, 250.0)
+    ref_400 = sim_s2_steps(tf_dfs_map, sigs_36m, wf_rules, u3_arrays, 50, True, ts_y1_start, ts_y3_end, 400.0, None)
+    ref_250 = sim_s2_steps(tf_dfs_map, sigs_36m, wf_rules, u3_arrays, 50, True, ts_y1_start, ts_y3_end, 400.0, 250.0)
     assert abs(f36_400["final_eq"] - ref_400["final_eq"]) < 0.05
     assert abs(f36_250["final_eq"] - ref_250["final_eq"]) < 0.05
 
-    # Individual periods (reset $10,000)
-    y1_400 = sim_portfolio_u_arrays(tf_dfs_map, sigs_y1, wf_rules, "U3_HTF_MACRO_ATR", u3_arrays, None, 400.0, None)
-    y1_250 = sim_portfolio_u_arrays(tf_dfs_map, sigs_y1, wf_rules, "U3_HTF_MACRO_ATR", u3_arrays, None, 400.0, 250.0)
-    y2_400 = sim_portfolio_u_arrays(tf_dfs_map, sigs_y2, wf_rules, "U3_HTF_MACRO_ATR", u3_arrays, None, 400.0, None)
-    y2_250 = sim_portfolio_u_arrays(tf_dfs_map, sigs_y2, wf_rules, "U3_HTF_MACRO_ATR", u3_arrays, None, 400.0, 250.0)
-    t2_400 = sim_portfolio_u_arrays(tf_dfs_map, sigs_train_2y, wf_rules, "U3_HTF_MACRO_ATR", u3_arrays, None, 400.0, None)
-    t2_250 = sim_portfolio_u_arrays(tf_dfs_map, sigs_train_2y, wf_rules, "U3_HTF_MACRO_ATR", u3_arrays, None, 400.0, 250.0)
-    y3_400 = sim_portfolio_u_arrays(tf_dfs_map, sigs_blind_y3, wf_rules, "U3_HTF_MACRO_ATR", u3_arrays, None, 400.0, None)
-    y3_250 = sim_portfolio_u_arrays(tf_dfs_map, sigs_blind_y3, wf_rules, "U3_HTF_MACRO_ATR", u3_arrays, None, 400.0, 250.0)
+    # Individual periods (reset $10,000, S2 50-Step + Liquidity Cap)
+    y1_400 = sim_s2_steps(tf_dfs_map, sigs_y1, wf_rules, u3_arrays, 50, True, ts_y1_start, ts_y1_end, 400.0, None)
+    y1_250 = sim_s2_steps(tf_dfs_map, sigs_y1, wf_rules, u3_arrays, 50, True, ts_y1_start, ts_y1_end, 400.0, 250.0)
+    y2_400 = sim_s2_steps(tf_dfs_map, sigs_y2, wf_rules, u3_arrays, 50, True, ts_y2_start, ts_y2_end, 400.0, None)
+    y2_250 = sim_s2_steps(tf_dfs_map, sigs_y2, wf_rules, u3_arrays, 50, True, ts_y2_start, ts_y2_end, 400.0, 250.0)
+    t2_400 = sim_s2_steps(tf_dfs_map, sigs_train_2y, wf_rules, u3_arrays, 50, True, ts_y1_start, ts_y2_end, 400.0, None)
+    t2_250 = sim_s2_steps(tf_dfs_map, sigs_train_2y, wf_rules, u3_arrays, 50, True, ts_y1_start, ts_y2_end, 400.0, 250.0)
+    y3_400 = sim_s2_steps(tf_dfs_map, sigs_blind_y3, wf_rules, u3_arrays, 50, True, ts_y3_start, ts_y3_end, 400.0, None)
+    y3_250 = sim_s2_steps(tf_dfs_map, sigs_blind_y3, wf_rules, u3_arrays, 50, True, ts_y3_start, ts_y3_end, 400.0, 250.0)
 
     period_specs = [
         ("Năm 1 (11/2023 – 10/2024)", "Train · Reset $10k", y1_400, y1_250, "train"),
@@ -953,21 +970,21 @@ def main():
   <div class="shell">
     <div class="hero-top">
       <div>
-        <div class="eyebrow">CHICKTRADE v3.0 &middot; {n_setups} Setups &middot; U3_HTF_MACRO_ATR (4H EMA20 &times; &gamma;_tf)</div>
-        <h1>CHICKTRADE v3.0 &mdash; BÁO CÁO TỔNG QUAN 36 THÁNG (U3_HTF_MACRO_ATR &middot; {n_setups} SETUP)</h1>
-        <p class="hero-sub">Neo thước đo <strong>1U bất biến theo sóng vĩ mô 4H</strong> (<code>100% Zero-Lookahead</code>): huấn luyện trọn <strong>2 Năm đầu (11/2023 &rarr; 10/2025)</strong> và vượt bài thi mù <strong>Năm 3 OOS (11/2025 &rarr; 10/2026)</strong> thông suốt 36 tháng lãi kép</p>
+        <div class="eyebrow">CHICKTRADE v3.0 &middot; {n_setups} Setups &middot; S2 50 Bậc + Cap $300k/$150k + U3_HTF_MACRO_ATR</div>
+        <h1>CHICKTRADE v3.0 &mdash; BÁO CÁO TỔNG QUAN 36 THÁNG (U3_HTF_MACRO_ATR &middot; S2 50 BẬC)</h1>
+        <p class="hero-sub"><strong>S2 &middot; 50 Bậc Lãi Kép (đệm -10% mới hạ bậc) + Trần Thanh Khoản ($300k BTC/ETH, $150k Alt) + U3_HTF_MACRO_ATR (1U biến thiên theo nến 4H)</strong>: Train 2Y (<code>11/2023&rarr;10/2025</code>) &amp; Thi Mù Năm 3 (<code>11/2025&rarr;10/2026</code>)</p>
       </div>
       <div class="oos-verified-badge">
         <span class="b-lbl">VƯỢT BÀI THI MÙ NĂM 3 (11/2025&ndash;10/2026)</span>
-        <span class="b-val num">+{y3_250['ret']:.2f}% (Auto-Turbo) / +{y3_400['ret']:.2f}% (Bao 400G, DD {y3_400['mdd']:.2f}%)</span>
+        <span class="b-val num">+{y3_250['ret']:.2f}% (Auto-Turbo, DD {y3_250['mdd']:.2f}%) / +{y3_400['ret']:.2f}% (Bao 400G, DD {y3_400['mdd']:.2f}%)</span>
         <span class="b-sub num">Full 36M: +{f36_250['ret']:,.1f}% (${f36_250['final_eq']:,.0f}) Turbo &middot; +{f36_400['ret']:,.1f}% (${f36_400['final_eq']:,.0f}) 400G</span>
       </div>
     </div>
 
     <div class="meta-strip">
       <span><b>Toàn chuỗi 36 tháng:</b> <span class="nw"><code>01/11/2023 &rarr; 31/10/2026</code></span> <span class="nw">(2 Năm Train <code>11/2023&ndash;10/2025</code> + 1 Năm Thi Mù OOS <code>11/2025&ndash;10/2026</code> &middot; 6 Coin Futures &middot; Vốn <code>$10,000</code>)</span></span>
-      <span><b>Chuẩn thước đo 1U:</b> <span class="nw"><code>U3_HTF_MACRO_ATR</code></span> <span class="nw">(<code>EMA20(0.5&times;ATR14_4H/Close_4H) &times; &gamma;_tf</code>, sàn <code>0.08%</code>)</span></span>
-      <span><b>Chi phí thực tế:</b> <span class="nw">Phí <code>0.02%</code> Maker / <code>0.05%</code> Taker + trượt giá <code>0.01%</code></span></span>
+      <span><b>Lãi kép &amp; Thanh khoản:</b> <span class="nw"><code>S2 · 50 Bậc (+8%/bậc, đệm -10%)</code></span> &middot; <span class="nw">Cap <code>$300k BTC/ETH · $150k Alt</code></span></span>
+      <span><b>Thước đo 1U &amp; Phí:</b> <span class="nw"><code>U3_HTF_MACRO_ATR (4H EMA20 &times; &gamma;_tf)</code></span> &middot; <span class="nw">Phí <code>0.02%/0.05%</code> + trượt <code>0.01%</code></span></span>
     </div>
   </div>
 </header>
@@ -1152,16 +1169,16 @@ def main():
   <!-- 5. 4 SAFETY & U3_HTF_MACRO_ATR EXPLANATION CARDS -->
   <section class="arch-grid">
     <div class="arch-card" style="border-top-color:#0284C7;">
-      <h4>1. Công Thức 1U Bất Biến <code>U3_HTF_MACRO_ATR</code></h4>
-      <p>Neo <code>1U</code> theo biên độ vĩ mô khung <code>4H</code> làm mượt bằng <code>EMA(20)</code>, nhân <code>&gamma;_tf</code> (<code>0.29 / 0.41 / 0.59</code>) và sàn tối thiểu <code>0.08%</code> — loại bỏ nhiễu nến ngắn hạn.</p>
+      <h4>1. <code>U3_HTF_MACRO_ATR</code> (1U Biến Thiên 4H)</h4>
+      <p><code>1U</code> biến thiên mượt theo nến <code>4H</code> đã đóng (<code>EMA20 &times; &gamma;_tf</code>, sàn <code>0.08%</code>) — loại bỏ nhiễu ngắn hạn và tự thích ứng qua mọi chu kỳ.</p>
     </div>
     <div class="arch-card" style="border-top-color:#059669;">
-      <h4>2. Zero Lookahead &amp; Tương Đồng Đa Chu Kỳ</h4>
-      <p>Chỉ đọc cây nến <code>4H</code> đã đóng hoàn toàn (<code>shift(1)</code>), tự động co giãn theo từng đồng coin và từng mùa biến động mà không cần đo trước tương lai.</p>
+      <h4>2. <code>S2 · 50 Bậc</code> Lãi Kép (Đệm -10%)</h4>
+      <p>Khóa cứng volume theo bậc đang đứng (tăng bậc mỗi <code>+8%</code>, tối đa 50 bậc) và chỉ hạ 1 bậc khi tụt quá <code>-10%</code> dưới mốc bậc, giúp hồi phục DD nhanh.</p>
     </div>
     <div class="arch-card" style="border-top-color:#EA580C;">
-      <h4>3. Auto-Turbo 250G &amp; Sàn Cứng $11,000</h4>
-      <p>Khởi chạy ở Bao 400G, tự sang số Bao 250G khi vốn &ge; <code>$12,500</code> và kiểm tra tổng rủi ro SL đang mở để luôn bảo vệ sàn tài sản &ge; <code>$11,000</code>.</p>
+      <h4>3. Trần Thanh Khoản ($300k / $150k)</h4>
+      <p>Áp trần thực chiến mỗi lệnh tối đa <code>$300,000</code> cho BTC/ETH và <code>$150,000</code> cho Altcoin, kèm Auto-Turbo 250G khóa cứng sàn bảo vệ <code>$11,000</code>.</p>
     </div>
     <div class="arch-card" style="border-top-color:#6D28D9;">
       <h4>4. 58 Setup Xuyên 3 Năm &amp; Phanh 2-SL</h4>
@@ -1170,7 +1187,7 @@ def main():
   </section>
 
   <footer class="footer-note">
-    CHICKTRADE v3.0 (<code>U3_HTF_MACRO_ATR</code>) &middot; 36 tháng (01/11/2023 &ndash; 31/10/2026) trên Binance USD-M Futures &middot; 58 Setup huấn luyện 11/2023 &ndash; 10/2025, Thi Mù OOS 11/2025 &ndash; 10/2026 &middot; Đã trừ phí sàn &amp; trượt giá.
+    CHICKTRADE v3.0 (<code>U3_HTF_MACRO_ATR</code> &middot; <code>S2 50 Bậc</code> &middot; Cap <code>$300k/$150k</code>) &middot; 36 tháng (01/11/2023 &ndash; 31/10/2026) &middot; 58 Setup Train 2Y, Thi Mù OOS Năm 3.
   </footer>
 
 </main>
@@ -1259,7 +1276,7 @@ def main():
       domain: [0.0, 0.27],
       gridcolor: '#E2E8F0',
       ticksuffix: '%',
-      range: [-14, 1]
+      range: [-16, 1]
     }},
     shapes: [
       {{
