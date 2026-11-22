@@ -1,0 +1,19 @@
+# Python caches
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+
+# Secrets & runtime state
+.env
+*.db
+*.sqlite
+*.sqlite3
+*.log
+*.tmp
+
+# Heavy downloadable market data caches
+data/cache/
+coins/*/data/*.csv.gz
+*.zip

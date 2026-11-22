@@ -1,0 +1,6 @@
+old/
+data/cache/
+coins/*/data/
+__pycache__/
+*.csv.gz
+*.db
