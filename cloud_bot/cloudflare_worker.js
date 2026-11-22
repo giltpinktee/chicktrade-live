@@ -15,6 +15,7 @@
 const MEM_STORE = {
   subscribers: {},
   pendingDeletes: [],
+  openMsgs: {},
   dedup: new Map(),
 };
 
@@ -85,8 +86,9 @@ export default {
       const res = await broadcastToSubscribers(
         cfg,
         String(payload.text || ''),
-        String(payload.webapp_url || cfg.WEBAPP_URL),
-        String(payload.exclude_chat_id || cfg.OWNER_CHAT_ID || '')
+        String(payload.exclude_chat_id || cfg.OWNER_CHAT_ID || ''),
+        String(payload.event_type || ''),
+        String(payload.pos_id || '')
       );
       return jsonResponse(res, 200);
     }
@@ -202,6 +204,43 @@ async function savePendingDeletes(cfg, list) {
   }
 }
 
+async function getOpenMsgMap(cfg, posId) {
+  const key = `open_msgs_${posId}`;
+  if (cfg.KV) {
+    try {
+      const val = await cfg.KV.get(key, { type: 'json' });
+      if (val && typeof val === 'object') return val;
+    } catch (e) {
+      console.error('KV getOpenMsgMap error:', e);
+    }
+  }
+  return MEM_STORE.openMsgs[key] || {};
+}
+
+async function saveOpenMsgMap(cfg, posId, map) {
+  const key = `open_msgs_${posId}`;
+  MEM_STORE.openMsgs[key] = map;
+  if (cfg.KV) {
+    try {
+      await cfg.KV.put(key, JSON.stringify(map), { expirationTtl: 14 * 86400 });
+    } catch (e) {
+      console.error('KV saveOpenMsgMap error:', e);
+    }
+  }
+}
+
+async function deleteOpenMsgMap(cfg, posId) {
+  const key = `open_msgs_${posId}`;
+  delete MEM_STORE.openMsgs[key];
+  if (cfg.KV) {
+    try {
+      await cfg.KV.delete(key);
+    } catch (e) {
+      console.error('KV deleteOpenMsgMap error:', e);
+    }
+  }
+}
+
 function isAdmin(cfg, chatId) {
   return Boolean(cfg.OWNER_CHAT_ID) && String(chatId) === String(cfg.OWNER_CHAT_ID);
 }
@@ -303,13 +342,17 @@ async function buildAdminUsersView(cfg) {
   };
 }
 
-async function broadcastToSubscribers(cfg, text, webappUrl, excludeChatId) {
+async function broadcastToSubscribers(cfg, text, excludeChatId, eventType = '', posId = '') {
   if (!text) return { ok: true, sent: 0, skipped: 0 };
   const subs = await getSubscribers(cfg);
   const ids = Object.keys(subs);
   let sent = 0;
   let skipped = 0;
   let changed = false;
+
+  const isFollowUp = Boolean(posId) && (eventType === 'TP1_HIT' || eventType === 'CLOSED');
+  const openMap = isFollowUp ? await getOpenMsgMap(cfg, posId) : {};
+  const newOpenMap = eventType === 'OPEN' && posId ? {} : null;
 
   for (const cid of ids) {
     const rec = subs[cid];
@@ -321,10 +364,13 @@ async function broadcastToSubscribers(cfg, text, webappUrl, excludeChatId) {
       skipped += 1;
       continue;
     }
-    const markup = buildOpenAppInlineMarkup(cid, webappUrl);
-    const resp = await sendTelegram(cfg, cid, text, markup);
+    const replyToMsgId = isFollowUp ? openMap[cid] || null : null;
+    const resp = await sendTelegram(cfg, cid, text, null, replyToMsgId);
     if (resp && resp.ok) {
       sent += 1;
+      if (newOpenMap && resp.result && resp.result.message_id) {
+        newOpenMap[cid] = resp.result.message_id;
+      }
     } else if (resp && (resp.error_code === 403 || resp.error_code === 400)) {
       rec.muted = true;
       changed = true;
@@ -336,6 +382,12 @@ async function broadcastToSubscribers(cfg, text, webappUrl, excludeChatId) {
 
   if (changed) {
     await saveSubscribers(cfg, subs);
+  }
+  if (newOpenMap && Object.keys(newOpenMap).length > 0) {
+    await saveOpenMsgMap(cfg, posId, newOpenMap);
+  }
+  if (eventType === 'CLOSED' && posId) {
+    await deleteOpenMsgMap(cfg, posId);
   }
   return { ok: true, sent, skipped };
 }
@@ -441,8 +493,7 @@ async function handleMessage(cfg, ctx, msg) {
     await sendTelegram(
       cfg,
       chatId,
-      '🔔 <b>Đã BẬT thông báo lệnh tự động!</b>\nBạn sẽ nhận tin ngay khi Bot mở lệnh, chốt TP1, đóng lệnh, bật/mở phanh 2-SL và tổng kết sáng 07:00 VN.',
-      buildInlineDashboardKeyboard(cfg, chatId)
+      '🔔 <b>Đã BẬT thông báo lệnh tự động!</b>\nBạn sẽ nhận tin ngay khi Bot mở lệnh, chốt TP1, đóng lệnh, bật/mở phanh 2-SL và tổng kết sáng 07:00 VN.'
     );
     return;
   }
@@ -452,33 +503,32 @@ async function handleMessage(cfg, ctx, msg) {
     await sendTelegram(
       cfg,
       chatId,
-      '🔕 <b>Đã TẠM TẮT thông báo tự động.</b>\nBạn vẫn có thể bấm nút hoặc gõ <code>/status</code>, <code>/orders</code>, <code>/1u</code>, <code>/stats</code> bình thường. Gõ /subscribe để bật lại.',
-      buildInlineDashboardKeyboard(cfg, chatId)
+      '🔕 <b>Đã TẠM TẮT thông báo tự động.</b>\nBạn vẫn có thể bấm nút hoặc gõ <code>/status</code>, <code>/orders</code>, <code>/1u</code>, <code>/stats</code> bình thường. Gõ /subscribe để bật lại.'
     );
     return;
   }
 
   if (cmd === '/status') {
     const dash = await fetchDashboard(cfg);
-    await sendTelegram(cfg, chatId, formatStatusText(dash), buildInlineDashboardKeyboard(cfg, chatId));
+    await sendTelegram(cfg, chatId, formatStatusText(dash));
     return;
   }
 
   if (cmd === '/orders') {
     const dash = await fetchDashboard(cfg);
-    await sendTelegram(cfg, chatId, formatOrdersText(dash), buildInlineDashboardKeyboard(cfg, chatId));
+    await sendTelegram(cfg, chatId, formatOrdersText(dash));
     return;
   }
 
   if (cmd === '/1u') {
     const dash = await fetchDashboard(cfg);
-    await sendTelegram(cfg, chatId, format1uRatesText(dash), buildInlineDashboardKeyboard(cfg, chatId));
+    await sendTelegram(cfg, chatId, format1uRatesText(dash));
     return;
   }
 
   if (cmd === '/stats') {
     const dash = await fetchDashboard(cfg);
-    await sendTelegram(cfg, chatId, formatStatsText(dash), buildInlineDashboardKeyboard(cfg, chatId));
+    await sendTelegram(cfg, chatId, formatStatsText(dash));
   }
 }
 
@@ -511,16 +561,16 @@ async function handleCallback(cfg, ctx, cb) {
 
   if (data === 'cmd_status') {
     const dash = await fetchDashboard(cfg);
-    await sendTelegram(cfg, chatId, formatStatusText(dash), buildInlineDashboardKeyboard(cfg, chatId));
+    await sendTelegram(cfg, chatId, formatStatusText(dash));
   } else if (data === 'cmd_orders') {
     const dash = await fetchDashboard(cfg);
-    await sendTelegram(cfg, chatId, formatOrdersText(dash), buildInlineDashboardKeyboard(cfg, chatId));
+    await sendTelegram(cfg, chatId, formatOrdersText(dash));
   } else if (data === 'cmd_1u') {
     const dash = await fetchDashboard(cfg);
-    await sendTelegram(cfg, chatId, format1uRatesText(dash), buildInlineDashboardKeyboard(cfg, chatId));
+    await sendTelegram(cfg, chatId, format1uRatesText(dash));
   } else if (data === 'cmd_stats') {
     const dash = await fetchDashboard(cfg);
-    await sendTelegram(cfg, chatId, formatStatsText(dash), buildInlineDashboardKeyboard(cfg, chatId));
+    await sendTelegram(cfg, chatId, formatStatsText(dash));
   } else if (data === 'chart_back') {
     await editMessageText(
       cfg,
@@ -595,7 +645,7 @@ function formatStatusText(d) {
   return (
     '💼 <b>TRẠNG THÁI QUỸ CHICKTRADE v3.3</b>\n' +
     `🕒 <code>${d.updated_at_utc || '--'}</code>\n\n` +
-    `• Tổng tài sản (Equity): <b>${fmtUsd(eq, false)}</b> (${roiPct >= 0 ? '+' : ''}${roiPct.toFixed(2)}% · ${fmtUsd(netDiff, true)})\n` +
+    `• Số dư hiện tại (Balance): <b>${fmtUsd(eq, false)}</b> (${roiPct >= 0 ? '+' : ''}${roiPct.toFixed(2)}% · ${fmtUsd(netDiff, true)})\n` +
     `• Bậc lãi kép S2: <b>Bậc ${step} (∞)</b> · 1U = <b>${fmtUsd(unitUsd, false)}</b>\n` +
     `• Lên Bậc ${step + 1} (${fmtUsd(nextEq, false)}): đạt <b>${progPct.toFixed(1)}%</b> (còn +${fmtUsd(remUsd, false)})\n` +
     `• Chế độ: <b>${mode} · ${acc.leverage || 20}× Cross</b>\n` +
@@ -744,7 +794,7 @@ async function tgApi(cfg, method, body) {
   }
 }
 
-async function sendTelegram(cfg, chatId, text, replyMarkup) {
+async function sendTelegram(cfg, chatId, text, replyMarkup = null, replyToMessageId = null) {
   const payload = {
     chat_id: chatId,
     text,
@@ -752,6 +802,10 @@ async function sendTelegram(cfg, chatId, text, replyMarkup) {
     disable_web_page_preview: true,
   };
   if (replyMarkup) payload.reply_markup = replyMarkup;
+  if (replyToMessageId) {
+    payload.reply_to_message_id = Number(replyToMessageId);
+    payload.allow_sending_without_reply = true;
+  }
   return await tgApi(cfg, 'sendMessage', payload);
 }
 
@@ -1047,26 +1101,12 @@ async function sendChartPhotoWithAutoDelete(cfg, ctx, chatId, pickerMsgId, sym, 
     }
     const pngBuf = await qcRes.arrayBuffer();
 
-    const popupChartUrl = `${cfg.WEBAPP_URL}?coin=${encodeURIComponent(sym)}&tf=${encodeURIComponent(tf)}`;
-    const openBtn = buildOpenAppButton(chatId, popupChartUrl);
-    const markup = openBtn
-      ? {
-          inline_keyboard: [
-            [
-              openBtn.web_app
-                ? { text: '📈 Mở Popup TradingView', web_app: openBtn.web_app }
-                : { text: '📈 Mở Popup TradingView', url: openBtn.url },
-            ],
-          ],
-        }
-      : null;
-
     const caption =
       `🕯️ <b>${sym} · ${tf.toUpperCase()}</b> · Giá Live: <b>${fmtPx(lastPx)}</b>\n` +
       `• EMA34: <code>${fmtPx(lastE34)}</code> · EMA89: <code>${fmtPx(lastE89)}</code> · EMA200: <code>${fmtPx(lastE200)}</code>\n` +
       '⏱️ <i>Ảnh tự xóa sau 2 phút để giữ nhóm sạch sẽ</i>';
 
-    const sent = await sendPhoto(cfg, chatId, pngBuf, `${sym}_${tf}.png`, caption, markup);
+    const sent = await sendPhoto(cfg, chatId, pngBuf, `${sym}_${tf}.png`, caption, null);
     await deleteMessage(cfg, chatId, pickerMsgId);
     if (sent && sent.ok && sent.result && sent.result.message_id) {
       await scheduleChartDelete(cfg, ctx, chatId, sent.result.message_id, 120000);

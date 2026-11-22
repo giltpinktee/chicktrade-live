@@ -473,12 +473,27 @@ def _brake_status_text(acc: dict) -> str:
     return f"An toàn ({int(acc.get('portfolio_consec_sl', 0))}/2 SL)"
 
 
-def _send_telegram(text: str) -> None:
+def _send_telegram(event_or_text: Any) -> None:
     token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
     chat_id = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
-    webapp_url = os.environ.get("WEBAPP_URL", "").strip()
     gas_url = os.environ.get("GAS_BROADCAST_URL", "").strip()
     gas_secret = os.environ.get("GAS_BROADCAST_SECRET", "").strip()
+
+    if isinstance(event_or_text, dict):
+        text = str(event_or_text.get("text", ""))
+        event_type = str(event_or_text.get("event_type", "")).strip()
+        pos_id = str(event_or_text.get("pos_id", "")).strip()
+        reply_to_msg_id = event_or_text.get("reply_to_msg_id")
+        pos_ref = event_or_text.get("pos_ref")
+    else:
+        text = str(event_or_text)
+        event_type = ""
+        pos_id = ""
+        reply_to_msg_id = None
+        pos_ref = None
+
+    if not text:
+        return
 
     if token and chat_id:
         payload: Dict[str, Any] = {
@@ -487,12 +502,14 @@ def _send_telegram(text: str) -> None:
             "parse_mode": "HTML",
             "disable_web_page_preview": True,
         }
-        if webapp_url.startswith("https://"):
-            payload["reply_markup"] = {
-                "inline_keyboard": [[{"text": "📊 Mở Popup Theo Dõi Lệnh Live", "web_app": {"url": webapp_url}}]]
-            }
+        if reply_to_msg_id:
+            payload["reply_to_message_id"] = int(reply_to_msg_id)
+            payload["allow_sending_without_reply"] = True
         try:
-            requests.post(f"https://api.telegram.org/bot{token}/sendMessage", json=payload, timeout=10)
+            res = requests.post(f"https://api.telegram.org/bot{token}/sendMessage", json=payload, timeout=10)
+            rj = res.json() if res.ok else {}
+            if rj.get("ok") and rj.get("result", {}).get("message_id") and event_type == "OPEN" and pos_ref is not None:
+                pos_ref["tg_open_msg_id"] = int(rj["result"]["message_id"])
         except Exception as exc:
             print(f"[WARN] Telegram notify failed: {exc}")
 
@@ -501,13 +518,16 @@ def _send_telegram(text: str) -> None:
             "action": "broadcast",
             "secret": gas_secret,
             "text": text,
-            "webapp_url": webapp_url,
             "exclude_chat_id": chat_id,
         }
+        if event_type:
+            b_payload["event_type"] = event_type
+        if pos_id:
+            b_payload["pos_id"] = pos_id
         try:
             requests.post(gas_url, json=b_payload, timeout=12)
         except Exception as exc:
-            print(f"[WARN] GAS broadcast failed: {exc}")
+            print(f"[WARN] Broadcast failed: {exc}")
 
 
 def _init_state(turbo_enabled: bool) -> dict:
@@ -857,14 +877,19 @@ def update_open_positions(
                         rem_q_tp1 = round(float(pos["qty"]) * 0.5, 6)
                         l2_desc = pos.get("leg2_sl_label") or "Dời SL chân 2"
                         must_tag = " · 🔥 <b>THẤY LÀ QUẤT</b>" if pos.get("is_must_order") else ""
-                        events.append(
-                            f"🎯 <b>ĐÃ CHỐT TP1 (50%) — {sym} · {tf.upper()} [{pos['setup_code']}]</b>{must_tag}\n"
-                            f"✅ Đã bỏ túi Chân 1: <b>{_fmt_signed_usd(pnl1)}</b> (+{tp1_u_val:g}U sau phí)\n\n"
-                            f"• Giá chạm TP1: <code>{_fmt_px(pos['tp1_price'])}</code> (Entry: <code>{_fmt_px(pos['entry_price'])}</code>)\n"
-                            f"• Khối lượng Chân 2 còn lại: <code>{rem_q_tp1}</code> {base_coin} (50%)\n"
-                            f"• 🛡️ Đã dời SL Chân 2 về: <code>{_fmt_px(pos['active_sl_price'])}</code> ({l2_desc} · Không tính vào phanh 2-SL)\n"
-                            f"• 🚀 Đích gồng TP2 (+{tp2_u_val:g}U): <code>{_fmt_px(pos['tp2_price'])}</code> (Dự kiến tổng lãi nếu chạm TP2: <b>{_fmt_signed_usd(pos['expected_tp2_usd'])}</b>)"
-                        )
+                        events.append({
+                            "event_type": "TP1_HIT",
+                            "pos_id": pos["id"],
+                            "reply_to_msg_id": pos.get("tg_open_msg_id"),
+                            "text": (
+                                f"🎯 <b>ĐÃ CHỐT TP1 (50%) — {sym} · {tf.upper()} [{pos['setup_code']}]</b>{must_tag}\n"
+                                f"✅ Đã bỏ túi Chân 1: <b>{_fmt_signed_usd(pnl1)}</b> (+{tp1_u_val:g}U sau phí)\n\n"
+                                f"• Giá chạm TP1: <code>{_fmt_px(pos['tp1_price'])}</code> (Entry: <code>{_fmt_px(pos['entry_price'])}</code>)\n"
+                                f"• Khối lượng Chân 2 còn lại: <code>{rem_q_tp1}</code> {base_coin} (50%)\n"
+                                f"• 🛡️ Đã dời SL Chân 2 về: <code>{_fmt_px(pos['active_sl_price'])}</code> ({l2_desc} · Không tính vào phanh 2-SL)\n"
+                                f"• 🚀 Đích gồng TP2 (+{tp2_u_val:g}U): <code>{_fmt_px(pos['tp2_price'])}</code> (Dự kiến tổng lãi nếu chạm TP2: <b>{_fmt_signed_usd(pos['expected_tp2_usd'])}</b>)"
+                            ),
+                        })
                         if (d == 1 and bh >= pos["tp2_price"]) or (d == -1 and bl <= pos["tp2_price"]):
                             closed_outcome, close_px, close_ts_str = "TP2", pos["tp2_price"], ts_str
                             break
@@ -1015,17 +1040,22 @@ def update_open_positions(
         roi_now = (float(acc["equity"]) / init_cap - 1.0) * 100.0
         rem_open_cnt = len(still_open) + (len(orig_open) - 1 - idx)
 
-        events.append(
-            f"{title_line}\n"
-            f"💵 Kết quả lệnh: <b>{_fmt_signed_usd(tot_pnl)}</b> ({eq_impact_pct:+.2f}% vốn · {pnl_u:+.2f}U)\n\n"
-            f"{detail_line}\n"
-            f"• Thời gian giữ lệnh: <b>{dur_str}</b>\n"
-            f"• Cập nhật Setup (3Y+Live): Thắng tiền <b>{setup_pwr:.1f}%</b> · WR <b>{setup_wr:.1f}%</b> ({setup_samples} lệnh)\n\n"
-            f"💼 <b>Trạng Thái Quỹ CHICKTRADE v3.3:</b>\n"
-            f"• Tổng tài sản (Equity): <b>${acc['equity']:,.2f}</b> ({roi_now:+.2f}% · {_fmt_signed_usd(net_from_init)})\n"
-            f"• Bậc lãi kép S2: <b>Bậc {step_n}</b> (${unit_usd:,.2f}/1U) — Đạt <b>{prog_pct:.1f}%</b> lộ trình lên Bậc {step_n + 1} (${next_eq:,.2f})\n"
-            f"• Lệnh đang mở: <b>{rem_open_cnt}/5 lệnh</b> · Phanh 2-SL: <b>{_brake_status_text(acc)}</b>"
-        )
+        events.append({
+            "event_type": "CLOSED",
+            "pos_id": pos["id"],
+            "reply_to_msg_id": pos.get("tg_open_msg_id"),
+            "text": (
+                f"{title_line}\n"
+                f"💵 Kết quả lệnh: <b>{_fmt_signed_usd(tot_pnl)}</b> ({eq_impact_pct:+.2f}% vốn · {pnl_u:+.2f}U)\n\n"
+                f"{detail_line}\n"
+                f"• Thời gian giữ lệnh: <b>{dur_str}</b>\n"
+                f"• Cập nhật Setup (3Y+Live): Thắng tiền <b>{setup_pwr:.1f}%</b> · WR <b>{setup_wr:.1f}%</b> ({setup_samples} lệnh)\n\n"
+                f"💼 <b>Trạng Thái Quỹ CHICKTRADE v3.3:</b>\n"
+                f"• Số dư hiện tại (Balance): <b>${acc['equity']:,.2f}</b> ({roi_now:+.2f}% · {_fmt_signed_usd(net_from_init)})\n"
+                f"• Bậc lãi kép S2: <b>Bậc {step_n}</b> (${unit_usd:,.2f}/1U) — Đạt <b>{prog_pct:.1f}%</b> lộ trình lên Bậc {step_n + 1} (${next_eq:,.2f})\n"
+                f"• Lệnh đang mở: <b>{rem_open_cnt}/5 lệnh</b> · Phanh 2-SL: <b>{_brake_status_text(acc)}</b>"
+            ),
+        })
         if triggered_shadow_pause:
             events.append(_format_shadow_pause_msg())
 
@@ -1231,18 +1261,24 @@ def open_new_positions(
                 f"Ăn trọn TP2: <b>{_fmt_signed_usd(pos_obj['expected_tp2_usd'])}</b>"
             )
 
-        events.append(
-            f"{dir_ic} <b>MỞ LỆNH {sig['direction']} — {sym} · {tf.upper()} [{sig['setup_type']}]</b>\n"
-            f"{rank_line}\n\n"
-            f"• Giá khớp Entry: <code>{_fmt_px(p_sig)}</code> (1U = ${_fmt_px(u)[1:]} · {u_pct:.3f}%)\n"
-            f"• Khối lượng: <code>{qty}</code> {base_coin} (~${notional:,.0f} · Bậc {int(acc['step'])} · {mode_lbl})\n"
-            f"• Lịch sử Setup (3Y+Live): Thắng tiền <b>{pwr_pct:.1f}%</b> · WR <b>{wr_pct:.1f}%</b> ({samples_n} lệnh)\n\n"
-            f"🎯 <b>Mốc Quản Trị Lệnh:</b>\n"
-            f"{targets_block}\n\n"
-            f"💰 <b>Dự Kiến Lãi / Lỗ Tiền Thật (Sau phí):</b>\n"
-            f"{exp_win_line}\n"
-            f"• Dính SL gốc: <b>{_fmt_signed_usd(pos_obj['expected_sl_usd'])}</b> ({pos_obj['expected_sl_eq_pct']:+.2f}% vốn)"
-        )
+        events.append({
+            "event_type": "OPEN",
+            "pos_id": pos_id,
+            "pos_ref": pos_obj,
+            "text": (
+                f"{dir_ic} <b>MỞ LỆNH {sig['direction']} — {sym} · {tf.upper()} [{sig['setup_type']}]</b>\n"
+                f"{rank_line}\n\n"
+                f"• Giá khớp Entry: <code>{_fmt_px(p_sig)}</code> (1U = ${_fmt_px(u)[1:]} · {u_pct:.3f}%)\n"
+                f"• Khối lượng: <code>{qty}</code> {base_coin} (~${notional:,.0f} · Bậc {int(acc['step'])} · {mode_lbl})\n"
+                f"• Số dư hiện tại (Balance): <b>${float(acc['equity']):,.2f}</b>\n"
+                f"• Lịch sử Setup (3Y+Live): Thắng tiền <b>{pwr_pct:.1f}%</b> · WR <b>{wr_pct:.1f}%</b> ({samples_n} lệnh)\n\n"
+                f"🎯 <b>Mốc Quản Trị Lệnh:</b>\n"
+                f"{targets_block}\n\n"
+                f"💰 <b>Dự Kiến Lãi / Lỗ Tiền Thật (Sau phí):</b>\n"
+                f"{exp_win_line}\n"
+                f"• Dính SL gốc: <b>{_fmt_signed_usd(pos_obj['expected_sl_usd'])}</b> ({pos_obj['expected_sl_eq_pct']:+.2f}% vốn)"
+            ),
+        })
 
     state["processed_signal_keys"] = sorted(seen_keys)[-500:]
 
@@ -1326,7 +1362,7 @@ def build_recap_message(state: dict, now_dt: datetime, is_weekly: bool = False) 
         f"{header}\n"
         f"{date_line}\n\n"
         f"💼 <b>Tài Sản &amp; Lãi Kép S2:</b>\n"
-        f"• Tổng tài sản (Equity): <b>${eq:,.2f}</b> ({roi_pct:+.2f}% · {_fmt_signed_usd(net_diff)} so với vốn gốc ${init_cap:,.0f})\n"
+        f"• Số dư hiện tại (Balance): <b>${eq:,.2f}</b> ({roi_pct:+.2f}% · {_fmt_signed_usd(net_diff)} so với vốn gốc ${init_cap:,.0f})\n"
         f"• Bậc lãi kép: <b>Bậc {step_n}</b> ({mode_lbl} · 1U = ${unit_usd:,.2f}) — Còn +${rem_usd:,.2f} lên Bậc {step_n + 1} (${next_eq:,.2f})\n"
         f"• Sụt giảm tối đa (MaxDD): <b>{float(acc.get('max_dd_pct', 0.0)):.2f}%</b> · Phanh 2-SL: <b>{_brake_status_text(acc)}</b>\n\n"
         f"📊 <b>Hoạt Động {period_lbl}:</b>\n"
@@ -1389,12 +1425,12 @@ def main():
         events.append(build_recap_message(state, now_dt, is_weekly=True))
         state["last_weekly_recap_week"] = week_key
 
+    for ev in events:
+        _send_telegram(ev)
+
     os.makedirs(os.path.dirname(OUT_JSON), exist_ok=True)
     with open(OUT_JSON, "w", encoding="utf-8") as f:
         json.dump(state, f, ensure_ascii=False, indent=2)
-
-    for ev in events:
-        _send_telegram(ev)
 
     print(
         f"[OK] {state['updated_at_utc']} | Equity=${acc['equity']:,.2f} (Step {acc['step']} Unlimited) | "
