@@ -22,6 +22,7 @@ const CONFIG = {
   BROADCAST_SECRET: PropertiesService.getScriptProperties().getProperty('BROADCAST_SECRET') || '',
   OWNER_CHAT_ID: PropertiesService.getScriptProperties().getProperty('OWNER_CHAT_ID') || '',
   SUBSCRIBERS_PROP_KEY: 'SUBSCRIBERS_JSON',
+  PENDING_DELETES_PROP_KEY: 'PENDING_DELETES_JSON',
   SHEET_NAME: 'CHICKTRADE_Orders',
 };
 
@@ -163,6 +164,7 @@ function handleMessage_(msg) {
   else if (rawText === '📈 Thống kê') cmd = '/stats';
   else if (rawText === '🔔 Bật tin') cmd = '/subscribe';
   else if (rawText === '🔕 Tắt tin') cmd = '/mute';
+  else if (rawText === '🕯️ Chart') cmd = '/chart';
   else if (rawText === '🔄 Menu') cmd = '/menu';
 
   if (cmd === '/start' || cmd === '/menu') {
@@ -175,9 +177,15 @@ function handleMessage_(msg) {
       '• /status — Tài sản, Bậc S2 &amp; Phanh 2-SL\n' +
       '• /orders — Lệnh đang mở &amp; Dự kiến Win/Loss $\n' +
       '• /1u — Bảng tỷ lệ 1U % 6 Coin (15m/30m/1h)\n' +
+      '• /chart — Gửi ảnh biểu đồ nến + EMA 34/89/200 (tự xóa sau 2 phút)\n' +
       '• /stats — Hiệu suất Profit WR, PF &amp; 5 lệnh gần nhất\n' +
       '• /mute | /subscribe — Tạm tắt / Bật lại thông báo tự động';
     sendTelegram_(chatId, welcome, buildReplyKeyboard_(chatId));
+    return;
+  }
+
+  if (cmd === '/chart') {
+    sendChartCoinPicker_(chatId);
     return;
   }
 
@@ -224,6 +232,7 @@ function handleMessage_(msg) {
 
 function handleCallback_(cb) {
   const chatId = cb.message.chat.id;
+  const msgId = cb.message.message_id;
   const data = cb.data || '';
   answerCallback_(cb.id);
 
@@ -235,6 +244,17 @@ function handleCallback_(cb) {
     sendTelegram_(chatId, format1uRatesText_(fetchDashboard_()), buildInlineDashboardKeyboard_(chatId));
   } else if (data === 'cmd_stats') {
     sendTelegram_(chatId, formatStatsText_(fetchDashboard_()), buildInlineDashboardKeyboard_(chatId));
+  } else if (data === 'chart_back') {
+    editMessageText_(chatId, msgId, '🕯️ <b>XEM BIỂU ĐỒ NẾN + EMA 34/89/200 LIVE</b>\nChọn đồng Coin muốn xem:', buildChartCoinKeyboard_());
+  } else if (data.indexOf('chart_coin_') === 0) {
+    const sym = data.replace('chart_coin_', '');
+    editMessageText_(chatId, msgId, '🕯️ <b>' + sym + '</b> — Chọn khung thời gian muốn vẽ biểu đồ:', buildChartTfKeyboard_(sym));
+  } else if (data.indexOf('chart_go_') === 0) {
+    const rest = data.replace('chart_go_', '');
+    const parts = rest.split('_');
+    if (parts.length === 2) {
+      sendChartPhotoWithAutoDelete_(chatId, msgId, parts[0], parts[1]);
+    }
   }
 }
 
@@ -402,9 +422,9 @@ function buildReplyKeyboard_(chatId) {
       : { text: '🔄 Menu' };
   const row2 = [
     popupBtn,
+    { text: '🕯️ Chart' },
     { text: '🔔 Bật tin' },
     { text: '🔕 Tắt tin' },
-    { text: '🔄 Menu' },
   ];
   return {
     keyboard: [row1, row2],
@@ -456,6 +476,377 @@ function answerCallback_(callbackId) {
     contentType: 'application/json',
     payload: JSON.stringify({ callback_query_id: callbackId }),
     muteHttpExceptions: true,
+  });
+}
+
+function editMessageText_(chatId, messageId, text, replyMarkup) {
+  const payload = {
+    chat_id: chatId,
+    message_id: messageId,
+    text: text,
+    parse_mode: 'HTML',
+    disable_web_page_preview: true,
+  };
+  if (replyMarkup) payload.reply_markup = replyMarkup;
+  try {
+    const res = UrlFetchApp.fetch('https://api.telegram.org/bot' + CONFIG.BOT_TOKEN + '/editMessageText', {
+      method: 'post',
+      contentType: 'application/json',
+      payload: JSON.stringify(payload),
+      muteHttpExceptions: true,
+    });
+    return JSON.parse(res.getContentText());
+  } catch (err) {
+    return { ok: false };
+  }
+}
+
+function deleteMessage_(chatId, messageId) {
+  try {
+    const res = UrlFetchApp.fetch('https://api.telegram.org/bot' + CONFIG.BOT_TOKEN + '/deleteMessage', {
+      method: 'post',
+      contentType: 'application/json',
+      payload: JSON.stringify({ chat_id: chatId, message_id: messageId }),
+      muteHttpExceptions: true,
+    });
+    return JSON.parse(res.getContentText());
+  } catch (err) {
+    return { ok: false };
+  }
+}
+
+// ---------- QuickChart Live Candlestick + EMA 34/89/200 + 2-Min Auto-Delete ----------
+
+function buildChartCoinKeyboard_() {
+  return {
+    inline_keyboard: [
+      [
+        { text: 'BTC', callback_data: 'chart_coin_BTCUSDT' },
+        { text: 'ETH', callback_data: 'chart_coin_ETHUSDT' },
+        { text: 'BNB', callback_data: 'chart_coin_BNBUSDT' },
+      ],
+      [
+        { text: 'LINK', callback_data: 'chart_coin_LINKUSDT' },
+        { text: 'XRP', callback_data: 'chart_coin_XRPUSDT' },
+        { text: 'SOL', callback_data: 'chart_coin_SOLUSDT' },
+      ],
+    ],
+  };
+}
+
+function buildChartTfKeyboard_(sym) {
+  return {
+    inline_keyboard: [
+      [
+        { text: '15m', callback_data: 'chart_go_' + sym + '_15m' },
+        { text: '30m', callback_data: 'chart_go_' + sym + '_30m' },
+        { text: '1h', callback_data: 'chart_go_' + sym + '_1h' },
+        { text: '4h', callback_data: 'chart_go_' + sym + '_4h' },
+      ],
+      [{ text: '« Đổi Coin', callback_data: 'chart_back' }],
+    ],
+  };
+}
+
+function sendChartCoinPicker_(chatId) {
+  sendTelegram_(
+    chatId,
+    '🕯️ <b>XEM BIỂU ĐỒ NẾN + EMA 34/89/200 LIVE</b>\nChọn đồng Coin muốn xem:',
+    buildChartCoinKeyboard_()
+  );
+}
+
+function fetchKlines220_(sym, tf) {
+  const urls = [
+    'https://fapi.binance.com/fapi/v1/klines?symbol=' + encodeURIComponent(sym) + '&interval=' + encodeURIComponent(tf) + '&limit=220',
+    'https://data-api.binance.vision/api/v3/klines?symbol=' + encodeURIComponent(sym) + '&interval=' + encodeURIComponent(tf) + '&limit=220',
+  ];
+  for (let i = 0; i < urls.length; i++) {
+    try {
+      const res = UrlFetchApp.fetch(urls[i], { muteHttpExceptions: true });
+      if (res.getResponseCode() === 200) {
+        const arr = JSON.parse(res.getContentText());
+        if (Array.isArray(arr) && arr.length > 0) return arr;
+      }
+    } catch (e) {}
+  }
+  throw new Error('Khong tai duoc du lieu nen Binance cho ' + sym + ' ' + tf);
+}
+
+function computeEmaArr_(closes, period) {
+  if (!closes.length) return [];
+  const k = 2 / (period + 1);
+  const out = [closes[0]];
+  for (let i = 1; i < closes.length; i++) {
+    out.push(closes[i] * k + out[i - 1] * (1 - k));
+  }
+  return out;
+}
+
+function pad2_(n) {
+  return (n < 10 ? '0' : '') + n;
+}
+
+function sendChartPhotoWithAutoDelete_(chatId, pickerMsgId, sym, tf) {
+  try {
+    editMessageText_(chatId, pickerMsgId, '⏳ Đang tải 220 nến &amp; vẽ biểu đồ <b>' + sym + ' (' + tf + ')</b>...');
+    const raw = fetchKlines220_(sym, tf);
+    const closes = raw.map(k => parseFloat(k[4]));
+    const e34All = computeEmaArr_(closes, 34);
+    const e89All = computeEmaArr_(closes, 89);
+    const e200All = computeEmaArr_(closes, 200);
+
+    const nShow = Math.min(60, raw.length);
+    const startIdx = raw.length - nShow;
+    const labels = [];
+    const wicks = [];
+    const bodies = [];
+    const colors = [];
+    const e34Show = [];
+    const e89Show = [];
+    const e200Show = [];
+
+    let yMin = Infinity;
+    let yMax = -Infinity;
+    for (let i = startIdx; i < raw.length; i++) {
+      const k = raw[i];
+      const o = parseFloat(k[1]);
+      const h = parseFloat(k[2]);
+      const l = parseFloat(k[3]);
+      const c = parseFloat(k[4]);
+      yMin = Math.min(yMin, l, e34All[i], e89All[i], e200All[i]);
+      yMax = Math.max(yMax, h, e34All[i], e89All[i], e200All[i]);
+    }
+    const padRange = Math.max((yMax - yMin) * 0.05, yMax * 0.001);
+    const minBody = Math.max((yMax - yMin) * 0.0025, yMax * 0.00015);
+
+    for (let i = startIdx; i < raw.length; i++) {
+      const k = raw[i];
+      const dtVn = new Date(Number(k[0]) + 7 * 3600 * 1000);
+      const lbl =
+        tf === '4h'
+          ? pad2_(dtVn.getUTCDate()) + '/' + pad2_(dtVn.getUTCMonth() + 1) + ' ' + pad2_(dtVn.getUTCHours()) + 'h'
+          : pad2_(dtVn.getUTCHours()) + ':' + pad2_(dtVn.getUTCMinutes());
+      const o = parseFloat(k[1]);
+      const h = parseFloat(k[2]);
+      const l = parseFloat(k[3]);
+      const c = parseFloat(k[4]);
+      const isUp = c >= o;
+      labels.push(lbl);
+      wicks.push([l, h]);
+      if (Math.abs(c - o) < minBody) {
+        bodies.push([o - minBody * 0.5, o + minBody * 0.5]);
+      } else {
+        bodies.push([Math.min(o, c), Math.max(o, c)]);
+      }
+      colors.push(isUp ? '#059669' : '#DC2626');
+      e34Show.push(Number(e34All[i].toFixed(6)));
+      e89Show.push(Number(e89All[i].toFixed(6)));
+      e200Show.push(Number(e200All[i].toFixed(6)));
+    }
+
+    const lastPx = closes[closes.length - 1];
+    const lastE34 = e34All[e34All.length - 1];
+    const lastE89 = e89All[e89All.length - 1];
+    const lastE200 = e200All[e200All.length - 1];
+
+    const chartCfg = {
+      type: 'bar',
+      data: {
+        labels: labels,
+        datasets: [
+          {
+            type: 'line',
+            label: 'EMA 34',
+            data: e34Show,
+            borderColor: '#0284C7',
+            borderWidth: 2,
+            pointRadius: 0,
+            fill: false,
+            tension: 0.15,
+            order: 1,
+          },
+          {
+            type: 'line',
+            label: 'EMA 89',
+            data: e89Show,
+            borderColor: '#D97706',
+            borderWidth: 2,
+            pointRadius: 0,
+            fill: false,
+            tension: 0.15,
+            order: 1,
+          },
+          {
+            type: 'line',
+            label: 'EMA 200',
+            data: e200Show,
+            borderColor: '#7C3AED',
+            borderWidth: 2.2,
+            pointRadius: 0,
+            fill: false,
+            tension: 0.15,
+            order: 1,
+          },
+          {
+            type: 'bar',
+            label: 'Wick',
+            data: wicks,
+            backgroundColor: colors,
+            barThickness: 2,
+            grouped: false,
+            order: 2,
+          },
+          {
+            type: 'bar',
+            label: 'Candle',
+            data: bodies,
+            backgroundColor: colors,
+            barPercentage: 0.72,
+            categoryPercentage: 0.88,
+            grouped: false,
+            order: 3,
+          },
+        ],
+      },
+      options: {
+        plugins: {
+          title: {
+            display: true,
+            text: sym + ' · ' + tf.toUpperCase() + ' (60 nến gần nhất · EMA 34/89/200)',
+            color: '#0F172A',
+            font: { size: 14, weight: 'bold' },
+          },
+          legend: {
+            display: true,
+            labels: {
+              color: '#334155',
+              filter: function (item) {
+                return item.text.indexOf('EMA') === 0;
+              },
+            },
+          },
+        },
+        scales: {
+          x: {
+            ticks: { color: '#475569', maxTicksLimit: 10, maxRotation: 0 },
+            grid: { color: '#F1F5F9' },
+          },
+          y: {
+            position: 'right',
+            min: yMin - padRange,
+            max: yMax + padRange,
+            ticks: { color: '#334155' },
+            grid: { color: '#E2E8F0' },
+          },
+        },
+      },
+    };
+
+    const qcRes = UrlFetchApp.fetch('https://quickchart.io/chart', {
+      method: 'post',
+      contentType: 'application/json',
+      payload: JSON.stringify({
+        version: '3',
+        width: 800,
+        height: 460,
+        backgroundColor: '#FFFFFF',
+        format: 'png',
+        chart: chartCfg,
+      }),
+      muteHttpExceptions: true,
+    });
+    if (qcRes.getResponseCode() !== 200) {
+      throw new Error('QuickChart HTTP ' + qcRes.getResponseCode());
+    }
+    const pngBlob = qcRes.getBlob().setName(sym + '_' + tf + '.png');
+
+    const popupChartUrl = CONFIG.WEBAPP_URL + '?coin=' + encodeURIComponent(sym) + '&tf=' + encodeURIComponent(tf);
+    const openBtn = buildOpenAppButton_(chatId, popupChartUrl);
+    const markup = openBtn ? { inline_keyboard: [[{ text: '📈 Mở Popup TradingView', web_app: openBtn.web_app, url: openBtn.url }]] } : null;
+
+    const caption =
+      '🕯️ <b>' + sym + ' · ' + tf.toUpperCase() + '</b> · Giá Live: <b>' + fmtPx_(lastPx) + '</b>\n' +
+      '• EMA34: <code>' + fmtPx_(lastE34) + '</code> · EMA89: <code>' + fmtPx_(lastE89) + '</code> · EMA200: <code>' + fmtPx_(lastE200) + '</code>\n' +
+      '⏱️ <i>Ảnh tự xóa sau 2 phút để giữ nhóm sạch sẽ</i>';
+
+    const sent = sendPhoto_(chatId, pngBlob, caption, markup);
+    deleteMessage_(chatId, pickerMsgId);
+    if (sent && sent.ok && sent.result && sent.result.message_id) {
+      scheduleChartDelete_(chatId, sent.result.message_id, 120000);
+    }
+  } catch (err) {
+    Logger.log('Chart error: ' + err);
+    editMessageText_(chatId, pickerMsgId, '⚠️ Không thể vẽ biểu đồ lúc này: ' + String(err));
+  }
+}
+
+function sendPhoto_(chatId, photoBlob, caption, replyMarkup) {
+  const form = {
+    chat_id: String(chatId),
+    photo: photoBlob,
+    caption: caption,
+    parse_mode: 'HTML',
+  };
+  if (replyMarkup) {
+    form.reply_markup = JSON.stringify(replyMarkup);
+  }
+  const res = UrlFetchApp.fetch('https://api.telegram.org/bot' + CONFIG.BOT_TOKEN + '/sendPhoto', {
+    method: 'post',
+    payload: form,
+    muteHttpExceptions: true,
+  });
+  return JSON.parse(res.getContentText());
+}
+
+function scheduleChartDelete_(chatId, messageId, delayMs) {
+  const props = PropertiesService.getScriptProperties();
+  let list = [];
+  try {
+    list = JSON.parse(props.getProperty(CONFIG.PENDING_DELETES_PROP_KEY) || '[]') || [];
+  } catch (e) {
+    list = [];
+  }
+  list.push({
+    chat_id: String(chatId),
+    message_id: Number(messageId),
+    delete_at: Date.now() + Number(delayMs || 120000),
+  });
+  props.setProperty(CONFIG.PENDING_DELETES_PROP_KEY, JSON.stringify(list));
+  ScriptApp.newTrigger('cleanupExpiredCharts_').timeBased().after(Number(delayMs || 120000)).create();
+}
+
+function cleanupExpiredCharts_(e) {
+  const props = PropertiesService.getScriptProperties();
+  let list = [];
+  try {
+    list = JSON.parse(props.getProperty(CONFIG.PENDING_DELETES_PROP_KEY) || '[]') || [];
+  } catch (err) {
+    list = [];
+  }
+  const now = Date.now();
+  const remaining = [];
+  list.forEach(item => {
+    if (Number(item.delete_at) <= now + 5000) {
+      deleteMessage_(item.chat_id, item.message_id);
+    } else {
+      remaining.push(item);
+    }
+  });
+  if (remaining.length === 0) {
+    props.deleteProperty(CONFIG.PENDING_DELETES_PROP_KEY);
+  } else {
+    props.setProperty(CONFIG.PENDING_DELETES_PROP_KEY, JSON.stringify(remaining));
+  }
+
+  const firedUid = e && e.triggerUid ? String(e.triggerUid) : '';
+  const triggers = ScriptApp.getProjectTriggers();
+  triggers.forEach(t => {
+    if (t.getHandlerFunction() === 'cleanupExpiredCharts_') {
+      if ((firedUid && String(t.getUniqueId()) === firedUid) || remaining.length === 0) {
+        ScriptApp.deleteTrigger(t);
+      }
+    }
   });
 }
 

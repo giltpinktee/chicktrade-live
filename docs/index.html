@@ -9,6 +9,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
 <style>
   :root {
     --bg: #F8FAFC;
@@ -173,7 +174,7 @@
     .desktop-nav-wrap { display: none; }
     .mobile-bottom-nav {
       display: grid;
-      grid-template-columns: repeat(4, 1fr);
+      grid-template-columns: repeat(5, 1fr);
       position: fixed;
       bottom: 0;
       left: 0;
@@ -182,7 +183,7 @@
       background: rgba(255, 255, 255, 0.98);
       backdrop-filter: blur(10px);
       border-top: 1px solid var(--border);
-      padding: 6px 4px calc(6px + env(safe-area-inset-bottom)) 4px;
+      padding: 6px 2px calc(6px + env(safe-area-inset-bottom)) 2px;
       box-shadow: 0 -2px 10px rgba(15, 23, 42, 0.06);
     }
     .m-tab-btn {
@@ -193,9 +194,10 @@
       flex-direction: column;
       align-items: center;
       gap: 2px;
-      font-size: 10.5px;
+      font-size: 9.8px;
       font-weight: 700;
-      padding: 4px 2px;
+      padding: 4px 1px;
+      white-space: nowrap;
       cursor: pointer;
     }
     .m-tab-btn .m-ico { font-size: 16px; line-height: 1.1; }
@@ -706,6 +708,92 @@
     border-radius: 10px;
     font-size: 12.2px;
   }
+
+  /* TradingView Chart Tab */
+  .chart-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .chart-pill-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    align-items: center;
+  }
+  .c-pill {
+    border: 1px solid var(--border);
+    background: #FFFFFF;
+    color: var(--sec);
+    border-radius: 8px;
+    padding: 5px 10px;
+    font-size: 11.5px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.12s ease;
+  }
+  .c-pill.active {
+    background: var(--sky);
+    color: #FFFFFF;
+    border-color: var(--sky);
+    box-shadow: 0 1px 3px rgba(2, 132, 199, 0.25);
+  }
+  .chart-stage {
+    position: relative;
+    width: 100%;
+    height: 420px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    background: #FFFFFF;
+  }
+  @media (max-width: 767px) {
+    .chart-stage { height: 340px; }
+  }
+  .chart-legend-overlay {
+    position: absolute;
+    top: 8px;
+    left: 10px;
+    z-index: 6;
+    pointer-events: none;
+    background: rgba(255, 255, 255, 0.88);
+    backdrop-filter: blur(4px);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 5px 9px;
+    font-size: 11px;
+    line-height: 1.45;
+    max-width: calc(100% - 76px);
+  }
+  .chart-pos-banner {
+    margin-top: 10px;
+    padding: 9px 12px;
+    border-radius: 10px;
+    background: var(--sky-bg);
+    border: 1px solid #BAE6FD;
+    font-size: 11.8px;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 6px;
+    align-items: center;
+  }
+  .btn-chart-jump {
+    border: 1px solid #BAE6FD;
+    background: #F0F9FF;
+    color: #0369A1;
+    border-radius: 7px;
+    padding: 3px 8px;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .btn-chart-jump:hover {
+    background: #E0F2FE;
+  }
 </style>
 </head>
 <body>
@@ -729,6 +817,7 @@
   <!-- Desktop Top Segmented Bar -->
   <nav class="desktop-nav-wrap" aria-label="Điều hướng chính">
     <button type="button" class="d-tab-btn active" data-tab="tab-overview" onclick="switchTab('tab-overview')">💼 Tổng Quan</button>
+    <button type="button" class="d-tab-btn" data-tab="tab-chart" onclick="switchTab('tab-chart')">🕯️ Biểu Đồ</button>
     <button type="button" class="d-tab-btn" data-tab="tab-rates" onclick="switchTab('tab-rates')">📏 Tỷ Lệ 4H Live</button>
     <button type="button" class="d-tab-btn" data-tab="tab-history" onclick="switchTab('tab-history')">📜 Lịch Sử</button>
     <button type="button" class="d-tab-btn" data-tab="tab-guide" onclick="switchTab('tab-guide')">🛡️ Cơ Chế</button>
@@ -779,7 +868,48 @@
     </div>
   </section>
 
-  <!-- TAB 2: TỶ LỆ 4H LIVE -->
+  <!-- TAB 2: BIỂU ĐỒ TRADINGVIEW -->
+  <section id="tab-chart" class="tab-panel">
+    <div class="card">
+      <div class="card-head">
+        <div>
+          <h2>🕯️ Biểu Đồ Live · EMA 34 / 89 / 200</h2>
+          <p>Dữ liệu Binance Futures 260 nến · Tự động gắn Entry / SL / TP1 / TP2 nếu Coin đang có lệnh mở</p>
+        </div>
+        <div class="chart-toolbar">
+          <div class="chart-pill-row" id="chart-coin-pills">
+            <button type="button" class="c-pill active" data-coin="BTCUSDT" onclick="selectChartCoin('BTCUSDT')">BTC</button>
+            <button type="button" class="c-pill" data-coin="ETHUSDT" onclick="selectChartCoin('ETHUSDT')">ETH</button>
+            <button type="button" class="c-pill" data-coin="BNBUSDT" onclick="selectChartCoin('BNBUSDT')">BNB</button>
+            <button type="button" class="c-pill" data-coin="LINKUSDT" onclick="selectChartCoin('LINKUSDT')">LINK</button>
+            <button type="button" class="c-pill" data-coin="XRPUSDT" onclick="selectChartCoin('XRPUSDT')">XRP</button>
+            <button type="button" class="c-pill" data-coin="SOLUSDT" onclick="selectChartCoin('SOLUSDT')">SOL</button>
+          </div>
+          <div class="chart-pill-row" id="chart-tf-pills">
+            <button type="button" class="c-pill" data-tf="15m" onclick="selectChartTf('15m')">15m</button>
+            <button type="button" class="c-pill" data-tf="30m" onclick="selectChartTf('30m')">30m</button>
+            <button type="button" class="c-pill active" data-tf="1h" onclick="selectChartTf('1h')">1h</button>
+            <button type="button" class="c-pill" data-tf="4h" onclick="selectChartTf('4h')">4h</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="chart-stage" id="tv-chart-wrap">
+        <div class="chart-legend-overlay num" id="chart-legend">
+          <div><strong id="cl-title">BTCUSDT · 1H</strong> <span id="cl-price" style="font-weight:700;margin-left:4px;">--</span></div>
+          <div style="margin-top:2px;display:flex;flex-wrap:wrap;gap:8px;">
+            <span style="color:#0284C7;font-weight:700;">EMA34: <span id="cl-e34">--</span></span>
+            <span style="color:#D97706;font-weight:700;">EMA89: <span id="cl-e89">--</span></span>
+            <span style="color:#7C3AED;font-weight:700;">EMA200: <span id="cl-e200">--</span></span>
+          </div>
+        </div>
+      </div>
+
+      <div id="chart-pos-banner" style="display:none;"></div>
+    </div>
+  </section>
+
+  <!-- TAB 3: TỶ LỆ 4H LIVE -->
   <section id="tab-rates" class="tab-panel">
     <div class="card">
       <div class="card-head">
@@ -893,6 +1023,9 @@
   <button type="button" class="m-tab-btn active" data-tab="tab-overview" onclick="switchTab('tab-overview')">
     <span class="m-ico">💼</span><span>Tổng Quan</span>
   </button>
+  <button type="button" class="m-tab-btn" data-tab="tab-chart" onclick="switchTab('tab-chart')">
+    <span class="m-ico">🕯️</span><span>Biểu Đồ</span>
+  </button>
   <button type="button" class="m-tab-btn" data-tab="tab-rates" onclick="switchTab('tab-rates')">
     <span class="m-ico">📏</span><span>Tỷ Lệ 4H</span>
   </button>
@@ -920,6 +1053,18 @@
   let histCoinFilter = 'ALL';
   let histOutcomeFilter = 'ALL';
   let activeTabId = 'tab-overview';
+  let chartCoin = 'BTCUSDT';
+  let chartTf = '1h';
+  let tvChart = null;
+  let tvCandleSeries = null;
+  let tvEma34Series = null;
+  let tvEma89Series = null;
+  let tvEma200Series = null;
+  let chartPriceLines = [];
+  let chartLastCandle = null;
+  let chartPrevEma34 = null;
+  let chartPrevEma89 = null;
+  let chartPrevEma200 = null;
 
   function switchTab(tabId) {
     activeTabId = tabId;
@@ -932,6 +1077,11 @@
         renderEquityChart();
         try { Plotly.Plots.resize('chart-equity'); } catch (e) {}
       }, 40);
+    } else if (tabId === 'tab-chart') {
+      setTimeout(() => {
+        ensureTvChart();
+        loadChartData();
+      }, 30);
     }
   }
 
@@ -1128,6 +1278,7 @@
                 ${dirBadge}
                 ${mustBadge}
                 ${tp1Tag}
+                <button type="button" class="btn-chart-jump" onclick="openPositionChart('${p.symbol}', '${p.tf}')">📈 Xem Chart</button>
               </div>
               <div class="pos-meta-line num">
                 ${pwrTxt}
@@ -1313,7 +1464,249 @@
       renderOverviewHero();
       renderOpenPositions();
       renderRatesCards();
+      updateChartLiveCandle();
     } catch (e) {}
+  }
+
+  function getCoinPriceFormat(sym) {
+    if (sym === 'BTCUSDT') return { type: 'price', precision: 1, minMove: 0.1 };
+    if (sym === 'LINKUSDT') return { type: 'price', precision: 3, minMove: 0.001 };
+    if (sym === 'XRPUSDT') return { type: 'price', precision: 4, minMove: 0.0001 };
+    return { type: 'price', precision: 2, minMove: 0.01 };
+  }
+
+  function computeEmaSeries(closes, period) {
+    if (!closes.length) return [];
+    const k = 2 / (period + 1);
+    const out = [closes[0]];
+    for (let i = 1; i < closes.length; i++) {
+      out.push(closes[i] * k + out[i - 1] * (1 - k));
+    }
+    return out;
+  }
+
+  function ensureTvChart() {
+    const wrap = document.getElementById('tv-chart-wrap');
+    if (!wrap || typeof LightweightCharts === 'undefined') return;
+    if (tvChart) {
+      tvChart.applyOptions({ width: wrap.clientWidth, height: wrap.clientHeight });
+      return;
+    }
+    tvChart = LightweightCharts.createChart(wrap, {
+      width: wrap.clientWidth || 340,
+      height: wrap.clientHeight || 360,
+      layout: {
+        background: { color: '#FFFFFF' },
+        textColor: '#334155',
+        fontFamily: 'Inter, sans-serif',
+      },
+      grid: {
+        vertLines: { color: '#E2E8F0' },
+        horzLines: { color: '#E2E8F0' },
+      },
+      crosshair: {
+        mode: LightweightCharts.CrosshairMode.Normal,
+      },
+      rightPriceScale: {
+        borderColor: '#E2E8F0',
+      },
+      timeScale: {
+        borderColor: '#E2E8F0',
+        timeVisible: true,
+        secondsVisible: false,
+      },
+    });
+    tvCandleSeries = tvChart.addCandlestickSeries({
+      upColor: '#059669',
+      downColor: '#DC2626',
+      borderVisible: false,
+      wickUpColor: '#059669',
+      wickDownColor: '#DC2626',
+    });
+    tvEma34Series = tvChart.addLineSeries({
+      color: '#0284C7',
+      lineWidth: 1.8,
+      priceLineVisible: false,
+      lastValueVisible: false,
+    });
+    tvEma89Series = tvChart.addLineSeries({
+      color: '#D97706',
+      lineWidth: 1.8,
+      priceLineVisible: false,
+      lastValueVisible: false,
+    });
+    tvEma200Series = tvChart.addLineSeries({
+      color: '#7C3AED',
+      lineWidth: 2,
+      priceLineVisible: false,
+      lastValueVisible: false,
+    });
+    window.addEventListener('resize', () => {
+      if (tvChart && wrap.clientWidth > 0) {
+        tvChart.applyOptions({ width: wrap.clientWidth, height: wrap.clientHeight });
+      }
+    });
+  }
+
+  function syncChartPills() {
+    document.querySelectorAll('#chart-coin-pills .c-pill').forEach(b => {
+      b.classList.toggle('active', b.getAttribute('data-coin') === chartCoin);
+    });
+    document.querySelectorAll('#chart-tf-pills .c-pill').forEach(b => {
+      b.classList.toggle('active', b.getAttribute('data-tf') === chartTf);
+    });
+  }
+
+  function selectChartCoin(sym) {
+    chartCoin = sym;
+    syncChartPills();
+    loadChartData();
+  }
+
+  function selectChartTf(tf) {
+    chartTf = tf;
+    syncChartPills();
+    loadChartData();
+  }
+
+  function openPositionChart(sym, tf) {
+    chartCoin = sym;
+    if (['15m', '30m', '1h', '4h'].includes(tf)) chartTf = tf;
+    syncChartPills();
+    switchTab('tab-chart');
+  }
+
+  function syncChartPositionLines() {
+    if (!tvCandleSeries) return;
+    for (const pl of chartPriceLines) {
+      try { tvCandleSeries.removePriceLine(pl); } catch (e) {}
+    }
+    chartPriceLines = [];
+    const banner = document.getElementById('chart-pos-banner');
+    const pos = (dashData && Array.isArray(dashData.open_positions))
+      ? dashData.open_positions.find(p => p.symbol === chartCoin)
+      : null;
+
+    if (!pos) {
+      if (banner) banner.style.display = 'none';
+      return;
+    }
+
+    const addLine = (price, color, lineStyle, lineWidth, title) => {
+      const num = Number(price);
+      if (!isFinite(num) || num <= 0) return;
+      chartPriceLines.push(tvCandleSeries.createPriceLine({
+        price: num,
+        color,
+        lineWidth,
+        lineStyle,
+        axisLabelVisible: true,
+        title,
+      }));
+    };
+
+    addLine(pos.entry_price, '#0284C7', LightweightCharts.LineStyle.Dashed, 2, `Entry (${pos.direction})`);
+    addLine(pos.active_sl_price, '#DC2626', LightweightCharts.LineStyle.Solid, 2, 'SL');
+    addLine(pos.tp1_price, '#059669', LightweightCharts.LineStyle.Dashed, 1, 'TP1');
+    addLine(pos.tp2_price, '#15803D', LightweightCharts.LineStyle.Solid, 2, 'TP2');
+
+    if (banner) {
+      const curPx = liveTickers[pos.symbol] || pos.current_price || pos.entry_price;
+      const d = pos.direction === 'LONG' ? 1 : -1;
+      const remQty = Number(pos.qty) * (pos.tp1_hit ? 0.5 : 1.0);
+      const totPnl = Number(pos.realized_pnl_usd || 0) + d * (curPx - Number(pos.entry_price)) * remQty;
+      const col = totPnl >= 0 ? '#059669' : '#DC2626';
+      banner.style.display = 'flex';
+      banner.className = 'chart-pos-banner num';
+      banner.innerHTML =
+        `<span>📌 Đang mở lệnh <b>${pos.symbol} · ${pos.tf.toUpperCase()} [${shortSetupCode(pos.setup_code)}] ${pos.direction}</b> · Entry <code>${fmtPx(pos.entry_price)}</code></span>` +
+        `<span>PnL Live: <b style="color:${col};">${fmtUsd(totPnl, true)}</b> · TP1 <code>${fmtPx(pos.tp1_price)}</code> · SL <code>${fmtPx(pos.active_sl_price)}</code></span>`;
+    }
+  }
+
+  function updateChartLegend(px, e34, e89, e200) {
+    const titleEl = document.getElementById('cl-title');
+    if (titleEl) titleEl.textContent = `${chartCoin} · ${chartTf.toUpperCase()}`;
+    const pxEl = document.getElementById('cl-price');
+    if (pxEl) pxEl.textContent = fmtPx(px);
+    const e34El = document.getElementById('cl-e34');
+    if (e34El) e34El.textContent = fmtPx(e34);
+    const e89El = document.getElementById('cl-e89');
+    if (e89El) e89El.textContent = fmtPx(e89);
+    const e200El = document.getElementById('cl-e200');
+    if (e200El) e200El.textContent = fmtPx(e200);
+  }
+
+  async function loadChartData() {
+    ensureTvChart();
+    if (!tvChart || !tvCandleSeries) return;
+    syncChartPills();
+    try {
+      const url = `https://fapi.binance.com/fapi/v1/klines?symbol=${chartCoin}&interval=${chartTf}&limit=260`;
+      const resp = await fetch(url, { cache: 'no-store' });
+      if (!resp.ok) return;
+      const raw = await resp.json();
+      if (!Array.isArray(raw) || raw.length === 0) return;
+
+      const vnOffsetSec = 7 * 3600;
+      const candles = raw.map(k => ({
+        time: Math.floor(Number(k[0]) / 1000) + vnOffsetSec,
+        open: parseFloat(k[1]),
+        high: parseFloat(k[2]),
+        low: parseFloat(k[3]),
+        close: parseFloat(k[4]),
+      }));
+      const closes = candles.map(c => c.close);
+      const e34 = computeEmaSeries(closes, 34);
+      const e89 = computeEmaSeries(closes, 89);
+      const e200 = computeEmaSeries(closes, 200);
+
+      const sliceStart = Math.max(0, candles.length - 180);
+      const cSlice = candles.slice(sliceStart);
+      const e34Slice = cSlice.map((c, idx) => ({ time: c.time, value: e34[sliceStart + idx] }));
+      const e89Slice = cSlice.map((c, idx) => ({ time: c.time, value: e89[sliceStart + idx] }));
+      const e200Slice = cSlice.map((c, idx) => ({ time: c.time, value: e200[sliceStart + idx] }));
+
+      tvCandleSeries.applyOptions({ priceFormat: getCoinPriceFormat(chartCoin) });
+      tvCandleSeries.setData(cSlice);
+      tvEma34Series.setData(e34Slice);
+      tvEma89Series.setData(e89Slice);
+      tvEma200Series.setData(e200Slice);
+
+      chartLastCandle = { ...cSlice[cSlice.length - 1] };
+      chartPrevEma34 = e34.length >= 2 ? e34[e34.length - 2] : chartLastCandle.close;
+      chartPrevEma89 = e89.length >= 2 ? e89[e89.length - 2] : chartLastCandle.close;
+      chartPrevEma200 = e200.length >= 2 ? e200[e200.length - 2] : chartLastCandle.close;
+
+      updateChartLegend(
+        chartLastCandle.close,
+        e34[e34.length - 1],
+        e89[e89.length - 1],
+        e200[e200.length - 1]
+      );
+      syncChartPositionLines();
+      tvChart.timeScale().fitContent();
+    } catch (err) {}
+  }
+
+  function updateChartLiveCandle() {
+    if (activeTabId !== 'tab-chart' || !tvCandleSeries || !chartLastCandle) return;
+    const livePx = liveTickers[chartCoin];
+    if (!isFinite(livePx) || livePx <= 0) return;
+
+    chartLastCandle.close = livePx;
+    chartLastCandle.high = Math.max(chartLastCandle.high, livePx);
+    chartLastCandle.low = Math.min(chartLastCandle.low, livePx);
+    tvCandleSeries.update(chartLastCandle);
+
+    const e34Now = livePx * (2 / 35) + chartPrevEma34 * (1 - 2 / 35);
+    const e89Now = livePx * (2 / 90) + chartPrevEma89 * (1 - 2 / 90);
+    const e200Now = livePx * (2 / 201) + chartPrevEma200 * (1 - 2 / 201);
+    tvEma34Series.update({ time: chartLastCandle.time, value: e34Now });
+    tvEma89Series.update({ time: chartLastCandle.time, value: e89Now });
+    tvEma200Series.update({ time: chartLastCandle.time, value: e200Now });
+    updateChartLegend(livePx, e34Now, e89Now, e200Now);
+    syncChartPositionLines();
   }
 
   async function loadDashboard(alsoPollPrice = false) {
@@ -1327,6 +1720,7 @@
       renderRatesCards();
       renderClosedTrades();
       if (activeTabId === 'tab-history') renderEquityChart();
+      if (activeTabId === 'tab-chart') syncChartPositionLines();
       if (alsoPollPrice) pollBinancePrices();
     } catch (err) {
       document.getElementById('hdr-updated').textContent = 'Chưa tải được live_dashboard.json.';
@@ -1351,8 +1745,19 @@
   }
 
   loadDashboard(true);
+  try {
+    const qp = new URLSearchParams(window.location.search);
+    const qCoin = (qp.get('coin') || '').toUpperCase();
+    const qTf = (qp.get('tf') || '').toLowerCase();
+    if (SYMBOLS.includes(qCoin)) {
+      openPositionChart(qCoin, qTf);
+    }
+  } catch (e) {}
   setInterval(pollBinancePrices, 5000);
-  setInterval(() => loadDashboard(false), 60000);
+  setInterval(() => {
+    loadDashboard(false);
+    if (activeTabId === 'tab-chart') loadChartData();
+  }, 60000);
   setInterval(updateCountdowns, 1000);
   updateCountdowns();
 </script>
