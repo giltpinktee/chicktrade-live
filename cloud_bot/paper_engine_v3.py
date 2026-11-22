@@ -11,7 +11,7 @@ Does NOT modify `bot/` or `core/`.
 """
 import argparse
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import json
 import math
 import os
@@ -421,26 +421,93 @@ def _apply_s2_step(state: dict) -> None:
     acc["tier_capital"] = round(tier_cap, 2)
 
 
+def _fmt_px(px: float) -> str:
+    apx = abs(float(px))
+    if apx >= 1000:
+        return f"${apx:,.1f}"
+    if apx >= 10:
+        return f"${apx:,.2f}"
+    if apx >= 1:
+        return f"${apx:,.3f}"
+    return f"${apx:,.4f}"
+
+
+def _fmt_signed_usd(val: float) -> str:
+    v = float(val)
+    return f"+${v:,.2f}" if v >= 0 else f"-${abs(v):,.2f}"
+
+
+def _fmt_duration_vi(opened_utc: str, closed_utc: str) -> str:
+    try:
+        t0 = datetime.strptime(opened_utc[:16], "%Y-%m-%d %H:%M")
+        t1 = datetime.strptime(closed_utc[:16], "%Y-%m-%d %H:%M")
+        mins = max(0, int((t1 - t0).total_seconds() // 60))
+        days, rem = divmod(mins, 1440)
+        hrs, m = divmod(rem, 60)
+        if days > 0:
+            return f"{days} ngày {hrs} giờ {m:02d} phút"
+        if hrs > 0:
+            return f"{hrs} giờ {m:02d} phút"
+        return f"{m} phút"
+    except Exception:
+        return "--"
+
+
+def _s2_progress_info(acc: dict) -> Tuple[int, float, float, float, float]:
+    step = int(acc.get("step", 0))
+    eq = float(acc.get("equity", 10_000.0))
+    tier_cap = float(acc.get("tier_capital", 10_000.0))
+    buf = float(acc.get("buffer_units", 400))
+    unit_usd = tier_cap / max(buf, 1.0)
+    cur_base = 10_000.0 * (1.08 ** step)
+    next_eq = 10_000.0 * (1.08 ** (step + 1))
+    span = max(next_eq - cur_base, 1.0)
+    prog_pct = max(0.0, min(100.0, (eq - cur_base) / span * 100.0))
+    rem_usd = max(0.0, next_eq - eq)
+    return step, unit_usd, prog_pct, next_eq, rem_usd
+
+
+def _brake_status_text(acc: dict) -> str:
+    if acc.get("shadow_paused"):
+        return "Đang phanh 2-SL (Shadow-Win)"
+    return f"An toàn ({int(acc.get('portfolio_consec_sl', 0))}/2 SL)"
+
+
 def _send_telegram(text: str) -> None:
     token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
     chat_id = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
-    if not token or not chat_id:
-        return
     webapp_url = os.environ.get("WEBAPP_URL", "").strip()
-    payload: Dict[str, Any] = {
-        "chat_id": chat_id,
-        "text": text,
-        "parse_mode": "HTML",
-        "disable_web_page_preview": True,
-    }
-    if webapp_url.startswith("https://"):
-        payload["reply_markup"] = {
-            "inline_keyboard": [[{"text": "📊 Mở Dashboard Live & Bảng 1U", "web_app": {"url": webapp_url}}]]
+    gas_url = os.environ.get("GAS_BROADCAST_URL", "").strip()
+    gas_secret = os.environ.get("GAS_BROADCAST_SECRET", "").strip()
+
+    if token and chat_id:
+        payload: Dict[str, Any] = {
+            "chat_id": chat_id,
+            "text": text,
+            "parse_mode": "HTML",
+            "disable_web_page_preview": True,
         }
-    try:
-        requests.post(f"https://api.telegram.org/bot{token}/sendMessage", json=payload, timeout=10)
-    except Exception as exc:
-        print(f"[WARN] Telegram notify failed: {exc}")
+        if webapp_url.startswith("https://"):
+            payload["reply_markup"] = {
+                "inline_keyboard": [[{"text": "📊 Mở Popup Theo Dõi Lệnh Live", "web_app": {"url": webapp_url}}]]
+            }
+        try:
+            requests.post(f"https://api.telegram.org/bot{token}/sendMessage", json=payload, timeout=10)
+        except Exception as exc:
+            print(f"[WARN] Telegram notify failed: {exc}")
+
+    if gas_url.startswith("https://"):
+        b_payload: Dict[str, Any] = {
+            "action": "broadcast",
+            "secret": gas_secret,
+            "text": text,
+            "webapp_url": webapp_url,
+            "exclude_chat_id": chat_id,
+        }
+        try:
+            requests.post(gas_url, json=b_payload, timeout=12)
+        except Exception as exc:
+            print(f"[WARN] GAS broadcast failed: {exc}")
 
 
 def _init_state(turbo_enabled: bool) -> dict:
@@ -449,6 +516,8 @@ def _init_state(turbo_enabled: bool) -> dict:
         "updated_at_utc": "",
         "next_m15_close_ms": 0,
         "next_h4_close_ms": 0,
+        "last_daily_recap_date": "",
+        "last_weekly_recap_week": "",
         "account": {
             "initial_capital": 10_000.0,
             "equity": 10_000.0,
@@ -478,6 +547,7 @@ def _init_state(turbo_enabled: bool) -> dict:
         },
         "live_u3_rates": [],
         "open_positions": [],
+        "shadow_positions": [],
         "closed_trades": [],
         "equity_curve": [{"ts": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M"), "eq": 10_000.0, "dd": 0.0}],
         "processed_signal_keys": [],
@@ -628,6 +698,9 @@ def load_or_init_state(turbo_enabled: bool) -> dict:
         try:
             with open(OUT_JSON, encoding="utf-8") as f:
                 st = json.load(f)
+            st.setdefault("last_daily_recap_date", "")
+            st.setdefault("last_weekly_recap_week", "")
+            st.setdefault("shadow_positions", [])
             st["account"]["turbo_enabled"] = turbo_enabled
             st["account"]["sizing_policy"] = "S2_LOCKED_HYSTERESIS_10PCT (Không giới hạn bậc · Cap $300k/$150k)"
             return st
@@ -636,22 +709,116 @@ def load_or_init_state(turbo_enabled: bool) -> dict:
     return _init_state(turbo_enabled)
 
 
+def _format_shadow_pause_msg() -> str:
+    return (
+        "🛡️ <b>KÍCH HOẠT PHANH AN TOÀN 2-SL (CHẾ ĐỘ ĐÁNH NHÁP SHADOW-WIN)</b>\n"
+        "Danh mục vừa ghi nhận <b>2 lệnh SL gốc liên tiếp</b> ở nhóm Core.\n\n"
+        "• <b>Hành động của Bot:</b> Tạm khóa vào tiền thật cho các tín hiệu mới để tránh bão thị trường.\n"
+        "• <b>Điều kiện mở khóa tự động:</b> Bot vẫn theo dõi ngầm 58 Setup 24/7 — ngay khi có 1 lệnh thắng nháp (Shadow-Win chạm TP1), hệ thống sẽ tự động mở khóa tiền thật trở lại!"
+    )
+
+
+def _format_shadow_resume_msg(reason_line: str) -> str:
+    return (
+        "🟢 <b>ĐÃ MỞ KHÓA TIỀN THẬT — VƯỢT BÃO THÀNH CÔNG (SHADOW-WIN)</b>\n"
+        f"{reason_line}\n\n"
+        "• Chuỗi nhiễu thị trường đã qua — Bot chính thức bật lại chế độ giao dịch tiền thật 100% từ tín hiệu tiếp theo!"
+    )
+
+
+def _check_shadow_positions(
+    state: dict,
+    closed_data: Dict[str, Dict[str, pd.DataFrame]],
+    now_ms: int,
+    events: List[str],
+) -> None:
+    """Evaluate shadow positions while 2-SL brake is active; unlock on first Shadow-Win or 72h timeout."""
+    acc = state["account"]
+    if not acc.get("shadow_paused"):
+        return
+
+    if now_ms >= int(acc.get("shadow_paused_until_ms", 0)):
+        acc["shadow_paused"] = False
+        acc["shadow_paused_until_ms"] = 0
+        acc["portfolio_consec_sl"] = 0
+        state["shadow_positions"] = []
+        events.append(_format_shadow_resume_msg("Thời gian phanh tối đa <b>72 giờ</b> đã kết thúc an toàn."))
+        return
+
+    still_shadow: List[dict] = []
+    for sp in state.get("shadow_positions", []):
+        sym, tf = sp["symbol"], sp["tf"]
+        df = closed_data[sym][tf]
+        d = 1 if sp["direction"] == "LONG" else -1
+        new_bars = df[df["close_time_ms"] > int(sp["last_checked_close_ms"])]
+        won_shadow = False
+        lost_shadow = False
+        hit_label = "TP1"
+        hit_u = float(sp.get("tp1_u", 3.5))
+
+        for _, bar in new_bars.iterrows():
+            sp["last_checked_close_ms"] = int(bar["close_time_ms"])
+            sp["bars_held"] = int(sp.get("bars_held", 0)) + 1
+            bh, bl = float(bar["high"]), float(bar["low"])
+            arch = sp.get("exit_arch", "PARTIAL_MOVE_SL")
+            tp_tgt = sp["tp1_price"] if arch != "ONLY_1R" else sp.get("r1_price", sp["tp1_price"])
+
+            if (d == 1 and bl <= sp["sl_price"]) or (d == -1 and bh >= sp["sl_price"]):
+                lost_shadow = True
+                break
+            if (d == 1 and bh >= tp_tgt) or (d == -1 and bl <= tp_tgt):
+                won_shadow = True
+                hit_label = "1R" if arch == "ONLY_1R" else "TP1"
+                hit_u = float(sp.get("sl_u", 5.0)) if arch == "ONLY_1R" else float(sp.get("tp1_u", 3.5))
+                break
+            if sp["bars_held"] >= 200:
+                lost_shadow = True
+                break
+
+        if won_shadow:
+            acc["shadow_paused"] = False
+            acc["shadow_paused_until_ms"] = 0
+            acc["portfolio_consec_sl"] = 0
+            state["shadow_positions"] = []
+            events.append(
+                _format_shadow_resume_msg(
+                    f"Lệnh nháp <b>{sym} {tf} [{sp['setup_code']}]</b> vừa chạm <code>{hit_label}</code> (<b>+{hit_u:g}U</b>)."
+                )
+            )
+            return
+        if not lost_shadow:
+            still_shadow.append(sp)
+
+    state["shadow_positions"] = still_shadow
+
+
 def update_open_positions(
     state: dict,
     closed_data: Dict[str, Dict[str, pd.DataFrame]],
     live_prices: Dict[str, float],
     events: List[str],
+    now_ms: int = 0,
+    rules_map: Optional[Dict[Tuple[str, str, str], dict]] = None,
 ) -> None:
     """Check closed candles for SL / TP1 / TP2 / Leg2_SL hits on all open positions."""
+    if now_ms <= 0:
+        now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+    _check_shadow_positions(state, closed_data, now_ms, events)
+
     acc = state["account"]
     stats = state["stats"]
+    orig_open = list(state["open_positions"])
     still_open: List[dict] = []
 
-    for pos in state["open_positions"]:
+    for idx, pos in enumerate(orig_open):
         sym, tf = pos["symbol"], pos["tf"]
         df = closed_data[sym][tf]
         d = 1 if pos["direction"] == "LONG" else -1
         new_bars = df[df["close_time_ms"] > int(pos["last_checked_close_ms"])]
+        rule_obj = rules_map.get((sym, tf, pos["setup_code"])) if rules_map else None
+        base_coin = sym.replace("USDT", "")
+        tp1_u_val = float(pos.get("tp1_u") or (rule_obj["tp1_u"] if rule_obj else 3.5))
+        tp2_u_val = float(pos.get("tp2_u") or (rule_obj["tp2_u"] if rule_obj else 12.0))
 
         closed_outcome = None
         close_px = float(live_prices.get(sym, pos["entry_price"]))
@@ -686,11 +853,17 @@ def update_open_positions(
                         acc["equity"] = round(float(acc["equity"]) + pnl1, 2)
                         acc["peak_equity"] = max(float(acc["peak_equity"]), float(acc["equity"]))
                         pos["active_sl_price"] = pos["leg2_sl_price"]
+                        compute_expected_pnl_fields(pos, float(acc["equity"]))
+                        rem_q_tp1 = round(float(pos["qty"]) * 0.5, 6)
+                        l2_desc = pos.get("leg2_sl_label") or "Dời SL chân 2"
                         must_tag = " · 🔥 <b>THẤY LÀ QUẤT</b>" if pos.get("is_must_order") else ""
                         events.append(
-                            f"🎯 <b>CHẠM TP1 — DỜI SL CHÂN 2</b> | {sym} ({tf}) {pos['direction']}{must_tag}\n"
-                            f"Thắng tiền: <b>{pos.get('profit_wr_pct', 0):.1f}%</b> | WR: <b>{pos.get('wr_pct', 0):.1f}%</b>\n"
-                            f"Chốt 50% @ <code>{pos['tp1_price']:.4f}</code> (+${pnl1:.2f}) · Dời SL → <code>{pos['active_sl_price']:.4f}</code>"
+                            f"🎯 <b>ĐÃ CHỐT TP1 (50%) — {sym} · {tf.upper()} [{pos['setup_code']}]</b>{must_tag}\n"
+                            f"✅ Đã bỏ túi Chân 1: <b>{_fmt_signed_usd(pnl1)}</b> (+{tp1_u_val:g}U sau phí)\n\n"
+                            f"• Giá chạm TP1: <code>{_fmt_px(pos['tp1_price'])}</code> (Entry: <code>{_fmt_px(pos['entry_price'])}</code>)\n"
+                            f"• Khối lượng Chân 2 còn lại: <code>{rem_q_tp1}</code> {base_coin} (50%)\n"
+                            f"• 🛡️ Đã dời SL Chân 2 về: <code>{_fmt_px(pos['active_sl_price'])}</code> ({l2_desc} · Không tính vào phanh 2-SL)\n"
+                            f"• 🚀 Đích gồng TP2 (+{tp2_u_val:g}U): <code>{_fmt_px(pos['tp2_price'])}</code> (Dự kiến tổng lãi nếu chạm TP2: <b>{_fmt_signed_usd(pos['expected_tp2_usd'])}</b>)"
                         )
                         if (d == 1 and bh >= pos["tp2_price"]) or (d == -1 and bl <= pos["tp2_price"]):
                             closed_outcome, close_px, close_ts_str = "TP2", pos["tp2_price"], ts_str
@@ -718,11 +891,14 @@ def update_open_positions(
             continue
 
         # Close remaining leg & settle account
-        rem_qty = pos["qty"] * (0.5 if pos["tp1_hit"] else 1.0)
+        leg1_realized = float(pos.get("realized_pnl_usd", 0.0))
+        was_tp1_hit = bool(pos.get("tp1_hit"))
+        rem_qty = pos["qty"] * (0.5 if was_tp1_hit else 1.0)
         exit_maker = closed_outcome in ("TP1_FULL", "1R_FULL", "TP2")
         pnl_rem = _calc_leg_pnl(pos["entry_price"], close_px, rem_qty, d, exit_maker=exit_maker)
-        tot_pnl = round(float(pos.get("realized_pnl_usd", 0.0)) + pnl_rem, 2)
+        tot_pnl = round(leg1_realized + pnl_rem, 2)
 
+        eq_before = max(float(acc["equity"]), 1.0)
         acc["equity"] = round(float(acc["equity"]) + pnl_rem, 2)
         acc["peak_equity"] = max(float(acc["peak_equity"]), float(acc["equity"]))
         dd_now = (float(acc["equity"]) - float(acc["peak_equity"])) / float(acc["peak_equity"]) * 100.0
@@ -743,13 +919,14 @@ def update_open_positions(
             acc["turbo_active"] = False
             acc["buffer_units"] = 400
 
+        triggered_shadow_pause = False
         if closed_outcome == "SL" and pos["base_vol"] > 0.45:
             acc["portfolio_consec_sl"] = int(acc.get("portfolio_consec_sl", 0)) + 1
             if acc["portfolio_consec_sl"] >= 2:
                 acc["portfolio_consec_sl"] = 0
                 acc["shadow_paused"] = True
                 acc["shadow_paused_until_ms"] = int(pos["last_checked_close_ms"]) + 72 * 3_600_000
-                events.append("🛑 <b>PHANH 2-SL CORE → SHADOW-WIN</b> | Tạm dừng tiền thật đợi 1 lệnh thắng nháp (tối đa 72h).")
+                triggered_shadow_pause = True
         elif tot_pnl > 0:
             acc["portfolio_consec_sl"] = 0
 
@@ -793,13 +970,64 @@ def update_open_positions(
         state["equity_curve"].append({"ts": close_ts_str, "eq": acc["equity"], "dd": round(dd_now, 2)})
         state["equity_curve"] = state["equity_curve"][-1000:]
 
-        emoji = "✅" if tot_pnl > 0 else "❌"
+        # Updated 3Y+Live setup stats including this newly closed trade
+        setup_pwr = float(pos.get("profit_wr_pct", 0.0))
+        setup_wr = float(pos.get("wr_pct", 0.0))
+        setup_samples = int(pos.get("setup_total_samples", 0)) + 1
+        if rules_map:
+            updated_map = compute_setup_live_stats(rules_map, state["closed_trades"])
+            st_upd = updated_map.get((sym, tf, pos["setup_code"]))
+            if st_upd:
+                setup_pwr = st_upd["live_profit_wr_pct"]
+                setup_wr = st_upd["live_wr_pct"]
+                setup_samples = st_upd["total_samples"]
+
         must_tag = " · 🔥 <b>THẤY LÀ QUẤT</b>" if pos.get("is_must_order") else ""
+        if closed_outcome == "TP2":
+            title_line = f"🏆 <b>ĐÓNG LỆNH THẮNG TRỌN TP2 — {sym} · {tf.upper()} [{pos['setup_code']}]</b>{must_tag}"
+        elif closed_outcome in ("TP1_FULL", "1R_FULL"):
+            title_line = f"🏆 <b>ĐÓNG LỆNH CHỐT ĐÍCH {closed_outcome} — {sym} · {tf.upper()} [{pos['setup_code']}]</b>{must_tag}"
+        elif closed_outcome == "LEG2_SL":
+            ic = "✅" if tot_pnl > 0 else "⚠️"
+            title_line = f"{ic} <b>ĐÓNG LỆNH DỜI SL CHÂN 2 — {sym} · {tf.upper()} [{pos['setup_code']}]</b>{must_tag}"
+        elif closed_outcome == "TIMEOUT":
+            ic = "✅" if tot_pnl > 0 else "⏱️"
+            title_line = f"{ic} <b>ĐÓNG LỆNH HẾT GIỜ (TIMEOUT) — {sym} · {tf.upper()} [{pos['setup_code']}]</b>{must_tag}"
+        else:
+            title_line = f"❌ <b>ĐÓNG LỆNH DÍNH SL GỐC — {sym} · {tf.upper()} [{pos['setup_code']}]</b>{must_tag}"
+
+        eq_impact_pct = (tot_pnl / eq_before) * 100.0
+        if was_tp1_hit and closed_outcome in ("TP2", "LEG2_SL", "TIMEOUT"):
+            detail_line = (
+                f"• Chi tiết: Chân 1 chốt TP1 (<code>{_fmt_signed_usd(leg1_realized)}</code>) · "
+                f"Chân 2 đóng ({closed_outcome}) tại <code>{_fmt_px(close_px)}</code> (<code>{_fmt_signed_usd(pnl_rem)}</code>)"
+            )
+        else:
+            detail_line = (
+                f"• Chi tiết: Entry <code>{_fmt_px(pos['entry_price'])}</code> → Đóng tại <code>{_fmt_px(close_px)}</code> "
+                f"(KL <code>{qty_f}</code> {base_coin})"
+            )
+
+        dur_str = _fmt_duration_vi(pos["opened_utc"], close_ts_str)
+        step_n, unit_usd, prog_pct, next_eq, _ = _s2_progress_info(acc)
+        init_cap = float(acc.get("initial_capital", 10_000.0))
+        net_from_init = float(acc["equity"]) - init_cap
+        roi_now = (float(acc["equity"]) / init_cap - 1.0) * 100.0
+        rem_open_cnt = len(still_open) + (len(orig_open) - 1 - idx)
+
         events.append(
-            f"{emoji} <b>ĐÓNG LỆNH ({closed_outcome})</b> | {sym} ({tf}) {pos['setup_code']} {pos['direction']}{must_tag}\n"
-            f"Thắng tiền: <b>{pos.get('profit_wr_pct', 0):.1f}%</b> | WR: <b>{pos.get('wr_pct', 0):.1f}%</b>\n"
-            f"PnL: <b>{tot_pnl:+.2f} USD</b> · Equity: <b>${acc['equity']:,.2f}</b> (Bậc {acc['step']} · ∞)"
+            f"{title_line}\n"
+            f"💵 Kết quả lệnh: <b>{_fmt_signed_usd(tot_pnl)}</b> ({eq_impact_pct:+.2f}% vốn · {pnl_u:+.2f}U)\n\n"
+            f"{detail_line}\n"
+            f"• Thời gian giữ lệnh: <b>{dur_str}</b>\n"
+            f"• Cập nhật Setup (3Y+Live): Thắng tiền <b>{setup_pwr:.1f}%</b> · WR <b>{setup_wr:.1f}%</b> ({setup_samples} lệnh)\n\n"
+            f"💼 <b>Trạng Thái Quỹ CHICKTRADE v3.3:</b>\n"
+            f"• Tổng tài sản (Equity): <b>${acc['equity']:,.2f}</b> ({roi_now:+.2f}% · {_fmt_signed_usd(net_from_init)})\n"
+            f"• Bậc lãi kép S2: <b>Bậc {step_n}</b> (${unit_usd:,.2f}/1U) — Đạt <b>{prog_pct:.1f}%</b> lộ trình lên Bậc {step_n + 1} (${next_eq:,.2f})\n"
+            f"• Lệnh đang mở: <b>{rem_open_cnt}/5 lệnh</b> · Phanh 2-SL: <b>{_brake_status_text(acc)}</b>"
         )
+        if triggered_shadow_pause:
+            events.append(_format_shadow_pause_msg())
 
     state["open_positions"] = still_open
 
@@ -812,6 +1040,7 @@ def open_new_positions(
     now_ms: int,
     events: List[str],
     top_must_keys: Optional[set] = None,
+    rules_map: Optional[Dict[Tuple[str, str, str], dict]] = None,
 ) -> None:
     """Open qualifying signals with 20x Cross Margin, stepSize floor, minNotional & S2 liq cap."""
     acc = state["account"]
@@ -821,6 +1050,7 @@ def open_new_positions(
 
     dt = state["daily_tracker"]
     seen_keys = set(state.get("processed_signal_keys", []))
+    live_setup_stats = compute_setup_live_stats(rules_map, state.get("closed_trades", [])) if rules_map else {}
 
     for sig in signals:
         sig_key = f"{sig['symbol']}|{sig['tf']}|{sig['setup_type']}|{sig['signal_ts_ms']}"
@@ -837,7 +1067,28 @@ def open_new_positions(
         if acc["shadow_paused"]:
             if now_ms >= int(acc.get("shadow_paused_until_ms", 0)):
                 acc["shadow_paused"] = False
+                acc["shadow_paused_until_ms"] = 0
+                acc["portfolio_consec_sl"] = 0
+                state["shadow_positions"] = []
+                events.append(_format_shadow_resume_msg("Thời gian phanh tối đa <b>72 giờ</b> đã kết thúc an toàn."))
             else:
+                tick = filters[sym]["tickSize"]
+                sl_u_s, tp1_u_s = float(rule["sl_u"]), float(rule["tp1_u"])
+                if not any(sp["symbol"] == sym for sp in state.get("shadow_positions", [])):
+                    state.setdefault("shadow_positions", []).append({
+                        "symbol": sym,
+                        "tf": tf,
+                        "setup_code": sig["setup_type"],
+                        "direction": sig["direction"],
+                        "exit_arch": rule["exit_arch"],
+                        "sl_u": sl_u_s,
+                        "tp1_u": tp1_u_s,
+                        "sl_price": floor_step(p_sig - d * sl_u_s * u, tick),
+                        "tp1_price": floor_step(p_sig + d * tp1_u_s * u, tick),
+                        "r1_price": floor_step(p_sig + d * sl_u_s * u, tick),
+                        "bars_held": 0,
+                        "last_checked_close_ms": sig["signal_close_ms"],
+                    })
                 continue
 
         if dt["trades"] >= 10 or dt["pnl"] <= -0.05 * dt["start_eq"]:
@@ -899,8 +1150,10 @@ def open_new_positions(
         worst_sl_usd = round(qty * (sl_u * u) * 1.05, 2)
         pos_id = f"{sym}_{tf}_{sig['setup_type']}_{sig['signal_ts_ms']}"
         prior = rule.get("prior_1y", {})
-        pwr_pct = round(float(prior.get("profit_wr_pct", 0.0)), 1)
-        wr_pct = round(float(prior.get("wr_pct", 0.0)), 1)
+        st_live = live_setup_stats.get((sym, tf, sig["setup_type"]))
+        pwr_pct = st_live["live_profit_wr_pct"] if st_live else round(float(prior.get("profit_wr_pct", 0.0)), 1)
+        wr_pct = st_live["live_wr_pct"] if st_live else round(float(prior.get("wr_pct", 0.0)), 1)
+        samples_n = st_live["total_samples"] if st_live else int(prior.get("trades", 0))
         is_must = bool(top_must_keys and (sym, tf, sig["setup_type"]) in top_must_keys)
         pos_obj = {
             "id": pos_id,
@@ -908,6 +1161,7 @@ def open_new_positions(
             "tf": tf,
             "setup_code": sig["setup_type"],
             "direction": sig["direction"],
+            "status": rule.get("status", "CORE"),
             "entry_price": round(p_sig, 6),
             "current_price": round(p_sig, 6),
             "qty": qty,
@@ -916,9 +1170,15 @@ def open_new_positions(
             "base_vol": float(rule["adaptive_volume"]["init_vol_mult"]),
             "profit_wr_pct": pwr_pct,
             "wr_pct": wr_pct,
+            "setup_live_profit_wr_pct": pwr_pct,
+            "setup_live_wr_pct": wr_pct,
+            "setup_total_samples": samples_n,
             "is_must_order": is_must,
             "buffer_used": int(cur_buf),
             "u_price": round(u, 6),
+            "sl_u": sl_u,
+            "tp1_u": tp1_u,
+            "tp2_u": tp2_u,
             "exit_arch": rule["exit_arch"],
             "sl_price": sl_px,
             "active_sl_price": sl_px,
@@ -936,22 +1196,152 @@ def open_new_positions(
             "opened_utc": sig["signal_utc"],
             "last_checked_close_ms": sig["signal_close_ms"],
         }
+        compute_expected_pnl_fields(pos_obj, float(acc["equity"]))
         state["open_positions"].append(pos_obj)
         dt["trades"] = int(dt["trades"]) + 1
-        must_tag = " · 🔥 <b>THẤY LÀ QUẤT</b>" if is_must else ""
+
+        dir_ic = "🟢" if d == 1 else "🔴"
+        base_coin = sym.replace("USDT", "")
+        u_pct = (u / p_sig * 100.0) if p_sig > 0 else 0.0
+        mode_lbl = "Auto-Turbo 250G" if int(cur_buf) == 250 else "Bao 400G"
+        rank_line = (
+            f"🏆 <b>Hạng S+ (🔥 THẤY LÀ QUẤT)</b> · Volume {eff_m:.2f}×"
+            if is_must
+            else f"📌 Nhóm <b>{rule.get('status', 'CORE')}</b> · Volume {eff_m:.2f}×"
+        )
+        arch = rule["exit_arch"]
+        if arch in ("ONLY_TP1", "ONLY_1R"):
+            tgt_px = tp1_px if arch == "ONLY_TP1" else r1_px
+            tgt_u = tp1_u if arch == "ONLY_TP1" else sl_u
+            tgt_lbl = "TP1" if arch == "ONLY_TP1" else "1R"
+            targets_block = (
+                f"• {tgt_lbl} (Chốt 100% · +{tgt_u:g}U): <code>{_fmt_px(tgt_px)}</code>\n"
+                f"• SL gốc (-{sl_u:g}U): <code>{_fmt_px(sl_px)}</code>"
+            )
+            exp_win_line = f"• Chạm {tgt_lbl}: <b>{_fmt_signed_usd(pos_obj['expected_tp1_usd'])}</b>"
+        else:
+            l2_note = rule.get("leg2_sl_label") or "Dời SL chân 2"
+            targets_block = (
+                f"• TP1 (Chốt 50% · +{tp1_u:g}U): <code>{_fmt_px(tp1_px)}</code>\n"
+                f"• TP2 (Chốt 50% · +{tp2_u:g}U): <code>{_fmt_px(tp2_px)}</code> ({l2_note})\n"
+                f"• SL gốc (-{sl_u:g}U): <code>{_fmt_px(sl_px)}</code>"
+            )
+            exp_win_line = (
+                f"• Chạm TP1: <b>{_fmt_signed_usd(pos_obj['expected_tp1_usd'])}</b> | "
+                f"Ăn trọn TP2: <b>{_fmt_signed_usd(pos_obj['expected_tp2_usd'])}</b>"
+            )
+
         events.append(
-            f"🚀 <b>MỞ LỆNH MỚI</b> | {sym} ({tf}) <b>{sig['setup_type']}</b> [{sig['direction']}]{must_tag}\n"
-            f"Thắng tiền: <b>{pwr_pct:.1f}%</b> | WR: <b>{wr_pct:.1f}%</b>\n"
-            f"Entry: <code>{p_sig:.4f}</code> · Qty: <code>{qty}</code> (~${notional:,.0f} @ 20×)\n"
-            f"SL: <code>{sl_px:.4f}</code> · TP1: <code>{tp1_px:.4f}</code> · TP2: <code>{tp2_px:.4f}</code>"
+            f"{dir_ic} <b>MỞ LỆNH {sig['direction']} — {sym} · {tf.upper()} [{sig['setup_type']}]</b>\n"
+            f"{rank_line}\n\n"
+            f"• Giá khớp Entry: <code>{_fmt_px(p_sig)}</code> (1U = ${_fmt_px(u)[1:]} · {u_pct:.3f}%)\n"
+            f"• Khối lượng: <code>{qty}</code> {base_coin} (~${notional:,.0f} · Bậc {int(acc['step'])} · {mode_lbl})\n"
+            f"• Lịch sử Setup (3Y+Live): Thắng tiền <b>{pwr_pct:.1f}%</b> · WR <b>{wr_pct:.1f}%</b> ({samples_n} lệnh)\n\n"
+            f"🎯 <b>Mốc Quản Trị Lệnh:</b>\n"
+            f"{targets_block}\n\n"
+            f"💰 <b>Dự Kiến Lãi / Lỗ Tiền Thật (Sau phí):</b>\n"
+            f"{exp_win_line}\n"
+            f"• Dính SL gốc: <b>{_fmt_signed_usd(pos_obj['expected_sl_usd'])}</b> ({pos_obj['expected_sl_eq_pct']:+.2f}% vốn)"
         )
 
     state["processed_signal_keys"] = sorted(seen_keys)[-500:]
 
 
+def _collect_window_closed(closed_trades: List[dict], cutoff_dt: datetime) -> List[dict]:
+    out: List[dict] = []
+    for tr in closed_trades:
+        c_str = str(tr.get("closed_utc", ""))[:16]
+        try:
+            cdt = datetime.strptime(c_str, "%Y-%m-%d %H:%M").replace(tzinfo=timezone.utc)
+            if cdt >= cutoff_dt:
+                out.append(tr)
+        except Exception:
+            continue
+    return out
+
+
+def _format_macro_1u_block(rates_rows: List[dict]) -> str:
+    by_coin = {r["coin"].replace("USDT", ""): float(r.get("u_pct_15m", 0.0)) for r in rates_rows}
+    r1 = f"• BTC: {by_coin.get('BTC', 0.0):.3f}% · ETH: {by_coin.get('ETH', 0.0):.3f}% · BNB: {by_coin.get('BNB', 0.0):.3f}%"
+    r2 = f"• LINK: {by_coin.get('LINK', 0.0):.3f}% · XRP: {by_coin.get('XRP', 0.0):.3f}% · SOL: {by_coin.get('SOL', 0.0):.3f}%"
+    return f"{r1}\n{r2}"
+
+
+def build_recap_message(state: dict, now_dt: datetime, is_weekly: bool = False) -> str:
+    """Build Mẫu 5 Daily Recap (07:00 VN) or Weekly Recap (Monday 07:00 VN)."""
+    acc = state["account"]
+    vn_dt = now_dt + timedelta(hours=7)
+    init_cap = float(acc.get("initial_capital", 10_000.0))
+    eq = float(acc.get("equity", init_cap))
+    net_diff = eq - init_cap
+    roi_pct = (eq / init_cap - 1.0) * 100.0
+    step_n, unit_usd, _, next_eq, rem_usd = _s2_progress_info(acc)
+    mode_lbl = "Auto-Turbo 250G" if acc.get("turbo_active") else f"Bao {int(acc.get('buffer_units', 400))}G"
+
+    hours_back = 168 if is_weekly else 24
+    win_closed = _collect_window_closed(state.get("closed_trades", []), now_dt - timedelta(hours=hours_back))
+    w_wins = sum(1 for t in win_closed if float(t.get("pnl_usd", 0.0)) > 0)
+    w_losses = len(win_closed) - w_wins
+    w_pnl = sum(float(t.get("pnl_usd", 0.0)) for t in win_closed)
+
+    open_pos = state.get("open_positions", [])
+    if open_pos:
+        tot_unr = sum(float(p.get("realized_pnl_usd", 0.0)) + float(p.get("unrealized_pnl_usd", 0.0)) for p in open_pos)
+        top_p = open_pos[0]
+        extra = f" (+{len(open_pos) - 1} lệnh khác)" if len(open_pos) > 1 else ""
+        open_line = (
+            f"• Lệnh đang mở: <b>{len(open_pos)}/5 lệnh</b> "
+            f"({top_p['symbol']} {top_p['tf']} {top_p['direction']}{extra} · PnL tạm tính: <b>{_fmt_signed_usd(tot_unr)}</b>)"
+        )
+    else:
+        open_line = "• Lệnh đang mở: <b>0/5 lệnh</b> (Quỹ đang giữ 100% USDT chờ tín hiệu)"
+
+    if len(win_closed) > 0:
+        period_lbl = "7 Ngày Qua" if is_weekly else "24 Giờ Qua"
+        act_lbl = "trong tuần" if is_weekly else "trong ngày"
+        activity_line = (
+            f"• Lệnh đã đóng {act_lbl}: <b>{len(win_closed)} lệnh</b> "
+            f"({w_wins} Thắng / {w_losses} Thua · Lãi ròng: <b>{_fmt_signed_usd(w_pnl)}</b>)"
+        )
+    else:
+        period_lbl = "7 Ngày Qua" if is_weekly else "24 Giờ Qua"
+        activity_line = (
+            "• Thị trường đi ngang chưa chạm vùng điểm nổ EMA chuẩn — <b>0 phát sinh lệnh mới</b>, "
+            "bảo toàn 100% vốn &amp; chờ nhịp chạm chuẩn tiếp theo."
+        )
+
+    header = (
+        "🗓️ <b>BÁO CÁO TỔNG KẾT TUẦN — CHICKTRADE QUANT v3.3</b>"
+        if is_weekly
+        else "☀️ <b>BÁO CÁO TỔNG KẾT NGÀY — CHICKTRADE QUANT v3.3</b>"
+    )
+    iso_y, iso_w, _ = vn_dt.isocalendar()
+    date_line = (
+        f"📅 Tuần W{iso_w:02d}/{iso_y} · Chốt sáng Thứ Hai {vn_dt.strftime('%d/%m/%Y')} (07:00 VN · 24/7)"
+        if is_weekly
+        else f"📅 Ngày: {vn_dt.strftime('%d/%m/%Y')} (Hệ thống hoạt động 24/7 bình thường)"
+    )
+
+    return (
+        f"{header}\n"
+        f"{date_line}\n\n"
+        f"💼 <b>Tài Sản &amp; Lãi Kép S2:</b>\n"
+        f"• Tổng tài sản (Equity): <b>${eq:,.2f}</b> ({roi_pct:+.2f}% · {_fmt_signed_usd(net_diff)} so với vốn gốc ${init_cap:,.0f})\n"
+        f"• Bậc lãi kép: <b>Bậc {step_n}</b> ({mode_lbl} · 1U = ${unit_usd:,.2f}) — Còn +${rem_usd:,.2f} lên Bậc {step_n + 1} (${next_eq:,.2f})\n"
+        f"• Sụt giảm tối đa (MaxDD): <b>{float(acc.get('max_dd_pct', 0.0)):.2f}%</b> · Phanh 2-SL: <b>{_brake_status_text(acc)}</b>\n\n"
+        f"📊 <b>Hoạt Động {period_lbl}:</b>\n"
+        f"{activity_line}\n"
+        f"{open_line}\n\n"
+        f"📐 <b>Nhịp Thở Vĩ Mô 4H (1U % Khung 15m):</b>\n"
+        f"{_format_macro_1u_block(state.get('live_u3_rates', []))}"
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(description="CHICKTRADE v3.0 Paper Engine")
     parser.add_argument("--once", action="store_true", help="Run a single update cycle and exit")
+    parser.add_argument("--daily-recap", action="store_true", help="Force emit Daily Recap notification now")
+    parser.add_argument("--weekly-recap", action="store_true", help="Force emit Weekly Recap notification now")
     args = parser.parse_args()
 
     with open(RULES_PATH, encoding="utf-8") as f:
@@ -970,9 +1360,12 @@ def main():
     rates_rows, u_price_map = compute_u3_rates(closed_data, live_prices, unit_cfg)
 
     events: List[str] = []
-    update_open_positions(state, closed_data, live_prices, events)
+    update_open_positions(state, closed_data, live_prices, events, now_ms=now_ms, rules_map=rules_map)
     signals = detect_latest_signals(closed_data, rules_map)
-    open_new_positions(state, signals, u_price_map, filters, now_ms, events, top_must_keys=top_must_keys)
+    open_new_positions(
+        state, signals, u_price_map, filters, now_ms, events,
+        top_must_keys=top_must_keys, rules_map=rules_map,
+    )
     enrich_positions_metadata(state, rules_map, top_must_keys)
 
     acc = state["account"]
@@ -981,6 +1374,20 @@ def main():
     state["updated_at_utc"] = now_dt.strftime("%Y-%m-%d %H:%M:%S UTC")
     state["next_m15_close_ms"] = ((now_ms // TF_MS["15m"]) + 1) * TF_MS["15m"]
     state["next_h4_close_ms"] = ((now_ms // TF_MS["4h"]) + 1) * TF_MS["4h"]
+
+    # Daily & Weekly Recap at 00:00-00:30 UTC (07:00-07:30 VN)
+    in_recap_window = now_dt.hour == 0 and now_dt.minute <= 30
+    today_utc = now_dt.strftime("%Y-%m-%d")
+    iso_y, iso_w, _ = now_dt.isocalendar()
+    week_key = f"{iso_y}-W{iso_w:02d}"
+
+    if args.daily_recap or (in_recap_window and state.get("last_daily_recap_date") != today_utc):
+        events.append(build_recap_message(state, now_dt, is_weekly=False))
+        state["last_daily_recap_date"] = today_utc
+
+    if args.weekly_recap or (in_recap_window and now_dt.weekday() == 0 and state.get("last_weekly_recap_week") != week_key):
+        events.append(build_recap_message(state, now_dt, is_weekly=True))
+        state["last_weekly_recap_week"] = week_key
 
     os.makedirs(os.path.dirname(OUT_JSON), exist_ok=True)
     with open(OUT_JSON, "w", encoding="utf-8") as f:
@@ -992,7 +1399,7 @@ def main():
     print(
         f"[OK] {state['updated_at_utc']} | Equity=${acc['equity']:,.2f} (Step {acc['step']} Unlimited) | "
         f"Open={len(state['open_positions'])} | Closed={state['stats']['total_trades']} | "
-        f"Signals={len(signals)} | U3_Coins={len(rates_rows)}"
+        f"Signals={len(signals)} | U3_Coins={len(rates_rows)} | Alerts={len(events)}"
     )
 
 

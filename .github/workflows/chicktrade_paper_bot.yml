@@ -35,6 +35,8 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           WEBAPP_URL: ${{ vars.WEBAPP_URL }}
           TURBO_ENABLED: ${{ vars.TURBO_ENABLED }}
+          GAS_BROADCAST_URL: ${{ vars.GAS_BROADCAST_URL }}
+          GAS_BROADCAST_SECRET: ${{ secrets.GAS_BROADCAST_SECRET }}
         run: |
           python cloud_bot/paper_engine_v3.py --once
 
