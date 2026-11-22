@@ -1,0 +1,403 @@
+{
+  "version": "v3.0-u3-htf-macro-4h",
+  "updated_at_utc": "2026-11-22 10:37:08 UTC",
+  "next_m15_close_ms": 1795344300000,
+  "next_h4_close_ms": 1795348800000,
+  "account": {
+    "initial_capital": 10000.0,
+    "equity": 10000.0,
+    "peak_equity": 10000.0,
+    "max_dd_pct": 0.0,
+    "roi_pct": 0.0,
+    "step": 0,
+    "tier_capital": 10000.0,
+    "sizing_policy": "S2_LOCKED_HYSTERESIS_10PCT (50 Bậc · Cap $300k/$150k)",
+    "buffer_units": 400,
+    "turbo_enabled": false,
+    "turbo_active": false,
+    "leverage": 20,
+    "portfolio_consec_sl": 0,
+    "shadow_paused": false,
+    "shadow_paused_until_ms": 0
+  },
+  "stats": {
+    "total_trades": 0,
+    "wins": 0,
+    "wr_pct": 0.0,
+    "profit_wr_pct": 0.0,
+    "pf": 0.0,
+    "net_pnl_usd": 0.0,
+    "gross_profit_usd": 0.0,
+    "gross_loss_usd": 0.0
+  },
+  "live_u3_rates": [
+    {
+      "coin": "BTCUSDT",
+      "price": 60754.5,
+      "macro_4h_pct": 1.1257,
+      "prev_macro_4h_pct": 1.1177,
+      "h4_closed_utc": "2026-11-22 04:00",
+      "sl_u": 5.0,
+      "tp2_u": 12.0,
+      "tf_details": {
+        "15m": {
+          "u_pct": 0.3264,
+          "prev_u_pct": 0.3241,
+          "delta_pct": 0.0023,
+          "u_usd_price": 198.333046,
+          "sl_pct": 1.632,
+          "tp1_u": 4.0,
+          "tp1_pct": 1.306,
+          "tp2_pct": 3.917,
+          "doi_sl_1u_pct": -0.326
+        },
+        "30m": {
+          "u_pct": 0.4615,
+          "prev_u_pct": 0.4582,
+          "delta_pct": 0.0033,
+          "u_usd_price": 280.401893,
+          "sl_pct": 2.308,
+          "tp1_u": 4.0,
+          "tp1_pct": 1.846,
+          "tp2_pct": 5.538,
+          "doi_sl_1u_pct": -0.462
+        },
+        "1h": {
+          "u_pct": 0.6642,
+          "prev_u_pct": 0.6594,
+          "delta_pct": 0.0048,
+          "u_usd_price": 403.505163,
+          "sl_pct": 3.321,
+          "tp1_u": 3.5,
+          "tp1_pct": 2.325,
+          "tp2_pct": 7.97,
+          "doi_sl_1u_pct": -0.664
+        }
+      },
+      "u_pct_15m": 0.3264,
+      "prev_u_pct_15m": 0.3241,
+      "delta_pct_15m": 0.0023,
+      "u_pct_30m": 0.4615,
+      "prev_u_pct_30m": 0.4582,
+      "delta_pct_30m": 0.0033,
+      "u_pct_1h": 0.6642,
+      "prev_u_pct_1h": 0.6594,
+      "delta_pct_1h": 0.0048
+    },
+    {
+      "coin": "ETHUSDT",
+      "price": 1708.05,
+      "macro_4h_pct": 1.3857,
+      "prev_macro_4h_pct": 1.3852,
+      "h4_closed_utc": "2026-11-22 04:00",
+      "sl_u": 6.0,
+      "tp2_u": 10.0,
+      "tf_details": {
+        "15m": {
+          "u_pct": 0.4019,
+          "prev_u_pct": 0.4017,
+          "delta_pct": 0.0002,
+          "u_usd_price": 6.863874,
+          "sl_pct": 2.411,
+          "tp1_u": 3.5,
+          "tp1_pct": 1.407,
+          "tp2_pct": 4.019,
+          "doi_sl_1u_pct": -0.402
+        },
+        "30m": {
+          "u_pct": 0.5681,
+          "prev_u_pct": 0.5679,
+          "delta_pct": 0.0002,
+          "u_usd_price": 9.704098,
+          "sl_pct": 3.409,
+          "tp1_u": 3.5,
+          "tp1_pct": 1.988,
+          "tp2_pct": 5.681,
+          "doi_sl_1u_pct": -0.568
+        },
+        "1h": {
+          "u_pct": 0.8176,
+          "prev_u_pct": 0.8173,
+          "delta_pct": 0.0003,
+          "u_usd_price": 13.964434,
+          "sl_pct": 4.906,
+          "tp1_u": 3.5,
+          "tp1_pct": 2.862,
+          "tp2_pct": 8.176,
+          "doi_sl_1u_pct": -0.818
+        }
+      },
+      "u_pct_15m": 0.4019,
+      "prev_u_pct_15m": 0.4017,
+      "delta_pct_15m": 0.0002,
+      "u_pct_30m": 0.5681,
+      "prev_u_pct_30m": 0.5679,
+      "delta_pct_30m": 0.0002,
+      "u_pct_1h": 0.8176,
+      "prev_u_pct_1h": 0.8173,
+      "delta_pct_1h": 0.0003
+    },
+    {
+      "coin": "BNBUSDT",
+      "price": 552.17,
+      "macro_4h_pct": 1.0572,
+      "prev_macro_4h_pct": 1.0498,
+      "h4_closed_utc": "2026-11-22 04:00",
+      "sl_u": 6.0,
+      "tp2_u": 10.0,
+      "tf_details": {
+        "15m": {
+          "u_pct": 0.3066,
+          "prev_u_pct": 0.3044,
+          "delta_pct": 0.0022,
+          "u_usd_price": 1.692823,
+          "sl_pct": 1.84,
+          "tp1_u": 4.0,
+          "tp1_pct": 1.226,
+          "tp2_pct": 3.066,
+          "doi_sl_1u_pct": -0.307
+        },
+        "30m": {
+          "u_pct": 0.4334,
+          "prev_u_pct": 0.4304,
+          "delta_pct": 0.003,
+          "u_usd_price": 2.393301,
+          "sl_pct": 2.6,
+          "tp1_u": 3.5,
+          "tp1_pct": 1.517,
+          "tp2_pct": 4.334,
+          "doi_sl_1u_pct": -0.433
+        },
+        "1h": {
+          "u_pct": 0.6237,
+          "prev_u_pct": 0.6194,
+          "delta_pct": 0.0043,
+          "u_usd_price": 3.444019,
+          "sl_pct": 3.742,
+          "tp1_u": 3.5,
+          "tp1_pct": 2.183,
+          "tp2_pct": 6.237,
+          "doi_sl_1u_pct": -0.624
+        }
+      },
+      "u_pct_15m": 0.3066,
+      "prev_u_pct_15m": 0.3044,
+      "delta_pct_15m": 0.0022,
+      "u_pct_30m": 0.4334,
+      "prev_u_pct_30m": 0.4304,
+      "delta_pct_30m": 0.003,
+      "u_pct_1h": 0.6237,
+      "prev_u_pct_1h": 0.6194,
+      "delta_pct_1h": 0.0043
+    },
+    {
+      "coin": "LINKUSDT",
+      "price": 8.786,
+      "macro_4h_pct": 1.4124,
+      "prev_macro_4h_pct": 1.4179,
+      "h4_closed_utc": "2026-11-22 04:00",
+      "sl_u": 6.0,
+      "tp2_u": 8.0,
+      "tf_details": {
+        "15m": {
+          "u_pct": 0.4096,
+          "prev_u_pct": 0.4112,
+          "delta_pct": -0.0016,
+          "u_usd_price": 0.035988,
+          "sl_pct": 2.458,
+          "tp1_u": 3.5,
+          "tp1_pct": 1.434,
+          "tp2_pct": 3.277,
+          "doi_sl_1u_pct": -0.41
+        },
+        "30m": {
+          "u_pct": 0.5791,
+          "prev_u_pct": 0.5813,
+          "delta_pct": -0.0022,
+          "u_usd_price": 0.050879,
+          "sl_pct": 3.475,
+          "tp1_u": 3.5,
+          "tp1_pct": 2.027,
+          "tp2_pct": 4.633,
+          "doi_sl_1u_pct": -0.579
+        },
+        "1h": {
+          "u_pct": 0.8333,
+          "prev_u_pct": 0.8366,
+          "delta_pct": -0.0033,
+          "u_usd_price": 0.073217,
+          "sl_pct": 5.0,
+          "tp1_u": 3.5,
+          "tp1_pct": 2.917,
+          "tp2_pct": 6.666,
+          "doi_sl_1u_pct": -0.833
+        }
+      },
+      "u_pct_15m": 0.4096,
+      "prev_u_pct_15m": 0.4112,
+      "delta_pct_15m": -0.0016,
+      "u_pct_30m": 0.5791,
+      "prev_u_pct_30m": 0.5813,
+      "delta_pct_30m": -0.0022,
+      "u_pct_1h": 0.8333,
+      "prev_u_pct_1h": 0.8366,
+      "delta_pct_1h": -0.0033
+    },
+    {
+      "coin": "XRPUSDT",
+      "price": 0.933,
+      "macro_4h_pct": 1.353,
+      "prev_macro_4h_pct": 1.3537,
+      "h4_closed_utc": "2026-11-22 04:00",
+      "sl_u": 6.0,
+      "tp2_u": 8.0,
+      "tf_details": {
+        "15m": {
+          "u_pct": 0.3924,
+          "prev_u_pct": 0.3926,
+          "delta_pct": -0.0002,
+          "u_usd_price": 0.003661,
+          "sl_pct": 2.354,
+          "tp1_u": 3.5,
+          "tp1_pct": 1.373,
+          "tp2_pct": 3.139,
+          "doi_sl_1u_pct": -0.392
+        },
+        "30m": {
+          "u_pct": 0.5547,
+          "prev_u_pct": 0.555,
+          "delta_pct": -0.0003,
+          "u_usd_price": 0.005175,
+          "sl_pct": 3.328,
+          "tp1_u": 3.5,
+          "tp1_pct": 1.941,
+          "tp2_pct": 4.438,
+          "doi_sl_1u_pct": -0.555
+        },
+        "1h": {
+          "u_pct": 0.7982,
+          "prev_u_pct": 0.7987,
+          "delta_pct": -0.0005,
+          "u_usd_price": 0.007448,
+          "sl_pct": 4.789,
+          "tp1_u": 3.5,
+          "tp1_pct": 2.794,
+          "tp2_pct": 6.386,
+          "doi_sl_1u_pct": -0.798
+        }
+      },
+      "u_pct_15m": 0.3924,
+      "prev_u_pct_15m": 0.3926,
+      "delta_pct_15m": -0.0002,
+      "u_pct_30m": 0.5547,
+      "prev_u_pct_30m": 0.555,
+      "delta_pct_30m": -0.0003,
+      "u_pct_1h": 0.7982,
+      "prev_u_pct_1h": 0.7987,
+      "delta_pct_1h": -0.0005
+    },
+    {
+      "coin": "SOLUSDT",
+      "price": 70.44,
+      "macro_4h_pct": 1.4008,
+      "prev_macro_4h_pct": 1.4033,
+      "h4_closed_utc": "2026-11-22 04:00",
+      "sl_u": 6.0,
+      "tp2_u": 8.0,
+      "tf_details": {
+        "15m": {
+          "u_pct": 0.4062,
+          "prev_u_pct": 0.4069,
+          "delta_pct": -0.0007,
+          "u_usd_price": 0.286149,
+          "sl_pct": 2.437,
+          "tp1_u": 3.5,
+          "tp1_pct": 1.422,
+          "tp2_pct": 3.25,
+          "doi_sl_1u_pct": -0.406
+        },
+        "30m": {
+          "u_pct": 0.5743,
+          "prev_u_pct": 0.5753,
+          "delta_pct": -0.001,
+          "u_usd_price": 0.404555,
+          "sl_pct": 3.446,
+          "tp1_u": 3.5,
+          "tp1_pct": 2.01,
+          "tp2_pct": 4.594,
+          "doi_sl_1u_pct": -0.574
+        },
+        "1h": {
+          "u_pct": 0.8265,
+          "prev_u_pct": 0.8279,
+          "delta_pct": -0.0014,
+          "u_usd_price": 0.582165,
+          "sl_pct": 4.959,
+          "tp1_u": 3.5,
+          "tp1_pct": 2.893,
+          "tp2_pct": 6.612,
+          "doi_sl_1u_pct": -0.827
+        }
+      },
+      "u_pct_15m": 0.4062,
+      "prev_u_pct_15m": 0.4069,
+      "delta_pct_15m": -0.0007,
+      "u_pct_30m": 0.5743,
+      "prev_u_pct_30m": 0.5753,
+      "delta_pct_30m": -0.001,
+      "u_pct_1h": 0.8265,
+      "prev_u_pct_1h": 0.8279,
+      "delta_pct_1h": -0.0014
+    }
+  ],
+  "open_positions": [
+    {
+      "id": "BTCUSDT_1h_EMA89_W3_1795338000000",
+      "symbol": "BTCUSDT",
+      "tf": "1h",
+      "setup_code": "EMA89_W3",
+      "direction": "SHORT",
+      "entry_price": 61099.9,
+      "current_price": 60754.5,
+      "qty": 0.034,
+      "notional_usd": 2077.4,
+      "vol_mult": 0.55,
+      "base_vol": 0.55,
+      "buffer_used": 400,
+      "u_price": 403.383623,
+      "exit_arch": "PARTIAL_MOVE_SL",
+      "sl_price": 63116.8,
+      "active_sl_price": 63116.8,
+      "leg2_sl_price": 61038.8,
+      "leg2_sl_label": "Dời SL dương (+0.3U BE+Phí)",
+      "tp1_price": 59688.0,
+      "tp2_price": 56259.2,
+      "r1_price": 59082.9,
+      "tp1_hit": false,
+      "realized_pnl_usd": 0.0,
+      "unrealized_pnl_usd": 11.74,
+      "unrealized_pct": 0.565,
+      "worst_sl_usd": 72.0,
+      "bars_held": 0,
+      "opened_utc": "2026-11-22 09:00",
+      "last_checked_close_ms": 1795341599999
+    }
+  ],
+  "closed_trades": [],
+  "equity_curve": [
+    {
+      "ts": "2026-11-22 10:35",
+      "eq": 10000.0,
+      "dd": 0.0
+    }
+  ],
+  "processed_signal_keys": [
+    "BTCUSDT|1h|EMA89_W3|1795338000000"
+  ],
+  "daily_tracker": {
+    "date": "2026-11-22",
+    "trades": 1,
+    "pnl": 0.0,
+    "start_eq": 10000.0
+  }
+}

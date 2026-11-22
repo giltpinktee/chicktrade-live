@@ -201,7 +201,7 @@ def compute_1u_usd_reference_table(unit_cfg: dict = None) -> pd.DataFrame:
     ema_smooth = int(uc.get("ema_smooth", 20))
     atr_period = int(uc.get("atr_period", 14))
 
-    tf_resample_map = {"15m": "15min", "30m": "30min", "1h": "1h"}
+    tf_resample_map = {"5m": None, "15m": "15min", "30m": "30min", "1h": "1h"}
 
     for sym in SIX_COINS:
         gz_path = os.path.join(ROOT, "coins", sym, "data", f"{sym}_5m_1y.csv.gz")
@@ -234,16 +234,19 @@ def compute_1u_usd_reference_table(unit_cfg: dict = None) -> pd.DataFrame:
         h4_ref = pd.DataFrame({"timestamp": d4["timestamp"], "macro_pct_4h": macro_4h}).sort_values("timestamp")
 
         tf_stats = {}
-        for tfl in ["15m", "30m", "1h"]:
+        for tfl in ["5m", "15m", "30m", "1h"]:
             rule_str = tf_resample_map[tfl]
-            d = (
-                sub5.set_index("timestamp")
-                .resample(rule_str)
-                .agg({"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"})
-                .dropna()
-                .reset_index()
-                .sort_values("timestamp")
-            )
+            if rule_str is None:
+                d = sub5.sort_values("timestamp").copy()
+            else:
+                d = (
+                    sub5.set_index("timestamp")
+                    .resample(rule_str)
+                    .agg({"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"})
+                    .dropna()
+                    .reset_index()
+                    .sort_values("timestamp")
+                )
             m = pd.merge_asof(d[["timestamp"]], h4_ref, on="timestamp", direction="backward")
             gamma = float(gamma_map.get(tfl, 0.29))
             u_pct_arr = np.maximum(min_u_pct, m["macro_pct_4h"].ffill().fillna(min_u_pct / max(gamma, 1e-6)).values * gamma)
@@ -318,9 +321,6 @@ def render_1u_conversion_table_html(conv_df: pd.DataFrame) -> str:
             )
 
         extra_5m = ""
-        if "5m" in tfs:
-            st5 = tfs["5m"]
-            extra_5m = f'<div class="cell-sub num" style="margin-top:3px;color:#B45309;">[Setup 5m LINK]: 1U = {format_price_smart(st5["u_price"])} ({st5["u_pct"]:.2f}%) · Vào {format_qty_smart(st5["qty"], sym)} (~${st5["notional"]:,.0f})</div>'
 
         rows_html.append(
             f"""<tr class="row-active">
@@ -369,27 +369,44 @@ def render_1u_conversion_table_html(conv_df: pd.DataFrame) -> str:
     """
 
 
-def format_exit_vn(exit_raw: str, sl_u: float, tp1_u: float, tp2_u: float, leg2_label: str = "") -> Tuple[str, str]:
-    """Return (Line 1 plain Vietnamese exit style, Line 2 exact SL/TP parameters with .nw guards)."""
+def format_exit_vn(
+    exit_raw: str,
+    sl_u: float,
+    tp1_u: float,
+    tp2_u: float,
+    leg2_label: str = "",
+    u_pct: float = 0.0,
+    l2_u: float = None,
+) -> Tuple[str, str]:
+    """Return (Line 1 plain Vietnamese exit style, Line 2 exact SL/TP & Dời SL with U3 % conversion)."""
     clean = str(exit_raw).replace("SKIP (", "").replace(")", "").strip()
-    sl_s = f'<span class="nw">SL <b>{sl_u:.0f}U</b></span>'
-    tp1_s = f'<span class="nw">TP1 <b>{tp1_u:.1f}U</b></span>'
-    tp2_s = f'<span class="nw">TP2 <b>{tp2_u:.0f}U</b></span>'
+
+    def _pct_s(u_val: float, signed: bool = False) -> str:
+        if u_pct <= 0.0:
+            return ""
+        v = u_val * u_pct
+        return f" ({v:+.2f}%)" if signed else f" ({v:.2f}%)"
+
+    sl_s = f'<span class="nw">SL <b>{sl_u:g}U</b>{_pct_s(sl_u)}</span>'
+    tp1_s = f'<span class="nw">TP1 <b>{tp1_u:g}U</b>{_pct_s(tp1_u)}</span>'
+    tp2_s = f'<span class="nw">TP2 <b>{tp2_u:g}U</b>{_pct_s(tp2_u)}</span>'
+
     if clean == "ONLY_TP1":
-        return "Chốt 100% tại TP1 (Ăn nhanh)", f'{sl_s} · <span class="nw">Chốt hết ở TP1 <b>{tp1_u:.1f}U</b></span>'
+        return "Chốt 100% tại TP1 (Ăn nhanh)", f'{sl_s} &middot; <span class="nw">Chốt hết ở TP1 <b>{tp1_u:g}U</b>{_pct_s(tp1_u)}</span>'
     if clean == "ONLY_1R":
-        return "Chốt 100% tại 1R (Tỷ lệ 1:1)", f'{sl_s} · <span class="nw">Chốt hết ở <b>+{sl_u:.0f}U (1R)</b></span>'
+        return "Chốt 100% tại 1R (Tỷ lệ 1:1)", f'{sl_s} &middot; <span class="nw">Chốt hết ở <b>+{sl_u:g}U</b>{_pct_s(sl_u, True)} (1R)</span>'
     if clean == "PARTIAL_NO_MOVE":
-        return "Chia 2 nhịp (50/50) · Giữ SL gốc", f'{sl_s} · {tp1_s} · {tp2_s} · <span class="nw">(Không dời SL)</span>'
+        return "Chia 2 nhịp (50/50) &middot; Giữ SL gốc", f'{sl_s} &middot; {tp1_s} &middot; {tp2_s}<br><span class="nw">Dời SL: <b>Giữ SL gốc</b></span>'
     if "Entry-2" in clean or "-2" in leg2_label:
-        return "Chia 2 nhịp (50/50) · Dời SL -2U", f'{sl_s} · {tp1_s} · {tp2_s} · <span class="nw">Chân 2: <b>Entry-2U</b></span>'
+        return "Chia 2 nhịp (50/50) &middot; Dời SL -2U", f'{sl_s} &middot; {tp1_s} &middot; {tp2_s}<br><span class="nw">Dời SL: <b>Entry -2U</b>{_pct_s(-2.0, True)}</span>'
     if "Entry-1" in clean or "-1" in leg2_label:
-        return "Chia 2 nhịp (50/50) · Dời SL -1U", f'{sl_s} · {tp1_s} · {tp2_s} · <span class="nw">Chân 2: <b>Entry-1U</b></span>'
+        return "Chia 2 nhịp (50/50) &middot; Dời SL -1U", f'{sl_s} &middot; {tp1_s} &middot; {tp2_s}<br><span class="nw">Dời SL: <b>Entry -1U</b>{_pct_s(-1.0, True)}</span>'
     if "Entry0U" in clean or "0U" in leg2_label:
-        return "Chia 2 nhịp (50/50) · Dời về Entry", f'{sl_s} · {tp1_s} · {tp2_s} · <span class="nw">Chân 2: <b>Hòa vốn 0U</b></span>'
+        return "Chia 2 nhịp (50/50) &middot; Dời về Entry", f'{sl_s} &middot; {tp1_s} &middot; {tp2_s}<br><span class="nw">Dời SL: <b>Hòa vốn 0U</b></span>'
     if "BE+Phi" in clean:
-        return "Chia 2 nhịp (50/50) · Dời Entry+Phí", f'{sl_s} · {tp1_s} · {tp2_s} · <span class="nw">Chân 2: <b>Entry+Phí</b></span>'
-    return f"Chia 2 nhịp ({clean})", f'{sl_s} · {tp1_s} · {tp2_s} · <span class="nw">{leg2_label}</span>'
+        be_pct = f" ({l2_u * u_pct:+.2f}%)" if (u_pct > 0 and l2_u is not None and l2_u > 0) else ""
+        return "Chia 2 nhịp (50/50) &middot; Dời BE+Phí", f'{sl_s} &middot; {tp1_s} &middot; {tp2_s}<br><span class="nw">Dời SL: <b>BE+Phí</b>{be_pct}</span>'
+    return f"Chia 2 nhịp ({clean})", f'{sl_s} &middot; {tp1_s} &middot; {tp2_s}<br><span class="nw">Dời SL: <b>{leg2_label}</b></span>'
 
 
 def explain_skip_reason_vn(row: pd.Series) -> str:
@@ -489,9 +506,11 @@ def build_75_rules_table_html(
     rules_list: List[dict],
     table_id: str = "tbl-75-all",
     top_must_keys: set = None,
+    u_pct_lookup: Dict[Tuple[str, str], float] = None,
 ) -> str:
     """Render 7-column zero-horizontal-scroll table for active setups, sorted by MUST ORDER (Profit WR + Net U)."""
     rows_html = []
+    u_pct_lookup = u_pct_lookup or {}
     coin_ord_map = {c: i for i, c in enumerate(SIX_COINS)}
     sorted_rules = sorted(
         rules_list,
@@ -514,8 +533,11 @@ def build_75_rules_table_html(
             if r.get("exit_arch") == "PARTIAL_MOVE_SL"
             else r.get("exit_arch", "PARTIAL_Entry-2U")
         )
+        u_pct = float(u_pct_lookup.get((sym, tf), 0.0))
+        l2_u_val = float(r["leg2_sl_u"]) if r.get("leg2_sl_u") is not None else None
         ex_line1, ex_line2 = format_exit_vn(
-            raw_ex, float(r["sl_u"]), float(r["tp1_u"]), float(r["tp2_u"]), r.get("leg2_sl_label", "")
+            raw_ex, float(r["sl_u"]), float(r["tp1_u"]), float(r["tp2_u"]), r.get("leg2_sl_label", ""),
+            u_pct=u_pct, l2_u=l2_u_val,
         )
 
         wr_val = float(p["wr_pct"])
@@ -577,11 +599,11 @@ def build_75_rules_table_html(
     return f"""
     <table class="compact-tbl" id="{table_id}">
         <colgroup>
-            <col style="width:14%">
             <col style="width:13%">
-            <col style="width:19%">
-            <col style="width:24%">
             <col style="width:12%">
+            <col style="width:23%">
+            <col style="width:23%">
+            <col style="width:11%">
             <col style="width:9%">
             <col style="width:9%">
         </colgroup>
@@ -608,9 +630,11 @@ def build_coin_48_matrix_html(
     adf: pd.DataFrame,
     rules_by_key: Dict[Tuple[str, str, str], dict],
     top_must_keys: set = None,
+    u_pct_lookup: Dict[Tuple[str, str], float] = None,
 ) -> str:
     """Render full 48-row reference matrix (5m, 15m, 30m, 1h x EMA 34/89/200 x Touch 1..4) in 7 compact columns, 100% synced."""
     rows_html = []
+    u_pct_lookup = u_pct_lookup or {}
     sl_default = 5.0 if sym == "BTCUSDT" else 6.0
     tp2_default = 12.0 if sym == "BTCUSDT" else (10.0 if sym in ("ETHUSDT", "BNBUSDT") else 8.0)
     if top_must_keys is None:
@@ -640,6 +664,7 @@ def build_coin_48_matrix_html(
         tp2_pct = float(row["TP2_Hit_%"])
 
         tp1_default = 4.0 if (sym == "BTCUSDT" and tf != "1h") or (sym == "BNBUSDT" and tf in ("5m", "15m")) else 3.5
+        u_pct = float(u_pct_lookup.get((sym, tf), 0.0))
 
         if in_port:
             r = rules_by_key[k]
@@ -650,7 +675,11 @@ def build_coin_48_matrix_html(
                 if r.get("exit_arch") == "PARTIAL_MOVE_SL"
                 else r.get("exit_arch", "PARTIAL_Entry-2U")
             )
-            ex_l1, ex_l2 = format_exit_vn(raw_ex, float(r["sl_u"]), float(r["tp1_u"]), float(r["tp2_u"]), r.get("leg2_sl_label", ""))
+            l2_u_val = float(r["leg2_sl_u"]) if r.get("leg2_sl_u") is not None else None
+            ex_l1, ex_l2 = format_exit_vn(
+                raw_ex, float(r["sl_u"]), float(r["tp1_u"]), float(r["tp2_u"]), r.get("leg2_sl_label", ""),
+                u_pct=u_pct, l2_u=l2_u_val,
+            )
             pwr_1y = get_profit_wr(p)
             wr_1y = float(p["wr_pct"])
             net_u = float(p["net_u"])
@@ -670,7 +699,7 @@ def build_coin_48_matrix_html(
             dir_mode = "BOTH"
             is_top_must = False
             must_badge = ""
-            ex_l1, ex_l2 = format_exit_vn(str(row["Best_Exit"]), sl_default, tp1_default, tp2_default)
+            ex_l1, ex_l2 = format_exit_vn(str(row["Best_Exit"]), sl_default, tp1_default, tp2_default, u_pct=u_pct)
             ex_l1 = f"(Thử tốt nhất: {ex_l1})"
             if pwr_1y <= 0 and pf_1y > 0:
                 pwr_1y = (pf_1y / (pf_1y + 1.0)) * 100.0
@@ -721,11 +750,11 @@ def build_coin_48_matrix_html(
     return f"""
     <table class="compact-tbl" id="matrix-48-{sym}">
         <colgroup>
-            <col style="width:14%">
             <col style="width:13%">
-            <col style="width:19%">
-            <col style="width:24%">
             <col style="width:12%">
+            <col style="width:23%">
+            <col style="width:23%">
+            <col style="width:11%">
             <col style="width:9%">
             <col style="width:9%">
         </colgroup>
@@ -954,6 +983,11 @@ def render_rog_calculator_and_ladder_html() -> str:
 def main():
     core_cfg, all_75_rules, coin_audits = load_all_v23_data()
     conv_df = compute_1u_usd_reference_table(core_cfg.get("unit_config"))
+    u_pct_lookup: Dict[Tuple[str, str], float] = {
+        (row["sym"], tfl): float(st["u_pct"])
+        for _, row in conv_df.iterrows()
+        for tfl, st in row["tf_stats"].items()
+    }
     top_must_keys = compute_top_must_keys(all_75_rules)
     summary = core_cfg.get("summary", {})
     n_total = int(summary.get("total_setups", len(all_75_rules)))
@@ -1008,7 +1042,7 @@ def main():
                         <h3>Danh Sách {len(coin_rules)} Setup Đang Chạy Của {sym} (Xếp Theo Thứ Tự &ldquo;Đụng Là Quất&rdquo;)</h3>
                     </div>
                     {render_color_tier_legend_html()}
-                    {build_75_rules_table_html(coin_rules, table_id=f"tbl-picked-{sym}", top_must_keys=top_must_keys)}
+                    {build_75_rules_table_html(coin_rules, table_id=f"tbl-picked-{sym}", top_must_keys=top_must_keys, u_pct_lookup=u_pct_lookup)}
                 </div>
 
                 <details class="ref-details">
@@ -1024,7 +1058,7 @@ def main():
                                 <button class="f-btn" onclick="filterCoinMatrix('{sym}', '1h', this)">1h (12)</button>
                             </div>
                         </div>
-                        {build_coin_48_matrix_html(sym, adf, rules_by_key, top_must_keys=top_must_keys)}
+                        {build_coin_48_matrix_html(sym, adf, rules_by_key, top_must_keys=top_must_keys, u_pct_lookup=u_pct_lookup)}
                     </div>
                 </details>
             </section>
@@ -2075,7 +2109,7 @@ def main():
         <button class="s-btn" onclick="sort75Table('WR', this)">Winrate lệnh (%)</button>
         <button class="s-btn" onclick="sort75Table('COIN', this)">Theo mã coin</button>
       </div>
-      {build_75_rules_table_html(all_75_rules, table_id="tbl-75-master", top_must_keys=top_must_keys)}
+      {build_75_rules_table_html(all_75_rules, table_id="tbl-75-master", top_must_keys=top_must_keys, u_pct_lookup=u_pct_lookup)}
     </div>
   </section>
 
@@ -2122,6 +2156,35 @@ def main():
           <h4>6. Quản Trị Danh Mục, Lãi Kép 20 Bậc &amp; Auto-Turbo</h4>
           &bull; <strong>Trần Danh Mục:</strong> Tối đa <strong>5 lệnh mở cùng lúc</strong> (mỗi coin tối đa 1 lệnh, tổng hệ số Volume mở &le; <code>4.25&times;</code>), tối đa <strong>10 lệnh/ngày</strong>, nghỉ trong ngày nếu lỗ ngày chạm <code>-5%</code>.<br>
           &bull; <strong>Lãi Kép 20 Bậc (+8%/bậc) &amp; Auto-Turbo:</strong> Chuỗi 36M đạt <strong>Bao 400G (+{float(b36['ret_pct']):,.1f}% &rarr; ${int(round(float(b36['final_eq_usd']))):,d})</strong>; khi bật <strong>Auto-Turbo 250G</strong> (&ge; <code>$12,500</code>, khóa sàn &ge; <code>$11,000</code>) đạt <strong>+{float(t36['ret_pct']):,.1f}% &rarr; ${int(round(float(t36['final_eq_usd']))):,d}</strong>.
+        </div>
+      </div>
+
+      <div class="section-head" style="margin-top:22px;padding-top:16px;border-top:1px solid var(--border);">
+        <h3>⚡ Quy Tắc Khớp Lệnh Live, Chống Trượt Giá &amp; Đòn Bẩy Binance Futures (<code>v3.0</code>)</h3>
+      </div>
+      <div class="flow-grid">
+        <div class="flow-box" style="border-left:4px solid #0284C7;">
+          <h4>7. Vào Lệnh <code>LIMIT IOC &plusmn;0.25U</code> (Chặn Đuổi Giá)</h4>
+          &bull; Khi nến tín hiệu đóng nến xác nhận đủ điều kiện, bot <strong>KHÔNG bắn lệnh Market mù</strong> mà gửi lệnh <strong><code>LIMIT IOC</code> (Immediate-Or-Cancel)</strong> với biên trượt tối đa <code>&Delta;_max = 0.25U</code> (Long đặt tại <code>P_sig + 0.25U</code>, Short tại <code>P_sig - 0.25U</code>).<br>
+          &bull; Sổ lệnh đủ thanh khoản &rarr; khớp ngay trong vùng tốt. Giá giật vượt quá <code>0.25U</code> &rarr; sàn tự hủy ngay (<code>Canceled</code>), <strong>tuyệt đối không đuổi giá</strong>.
+        </div>
+        <div class="flow-box" style="border-left:4px solid #059669;">
+          <h4>8. Mốc Neo <code>SL / TP</code> vs <code>Dời SL</code> &amp; Tính Lại <code>Qty</code></h4>
+          &bull; <strong><code>SL gốc</code>, <code>TP1</code>, <code>TP2</code>:</strong> Bắt buộc neo cố định theo <strong>giá tín hiệu cấu trúc (<code>P_sig</code>)</strong> để khớp đúng đỉnh/đáy sóng tự nhiên của EMA.<br>
+          &bull; <strong><code>Dời SL Chân 2 (0U / BE+Phí)</code>:</strong> Neo theo <strong>giá khớp thực tế (<code>P_fill &plusmn; phí 2 chiều</code>)</strong>; riêng <code>Entry -1U / -2U</code> kẹp sàn bảo toàn lãi Chân 1 để tổng lệnh không bao giờ âm sau khi đã chạm <code>TP1</code>.<br>
+          &bull; <strong>Khối lượng <code>Qty</code>:</strong> Chia theo khoảng cách rủi ro thực tế <code>|P_limit - SL_struct|</code> để số USD mất khi dính Full SL <strong>khóa cứng đúng ngân sách <code>Bao 400G / 250G</code></strong>.
+        </div>
+        <div class="flow-box" style="border-left:4px solid #DC2626;">
+          <h4>9. 4 Trường Hợp Khẩn Cấp Sau Khi <code>FILLED</code> (<code>batchOrders</code>)</h4>
+          &bull; <strong>1. Bình thường:</strong> Gửi ngay <code>batchOrders</code> gắn đồng bộ <code>SL gốc + TP1 + TP2</code> bảo vệ vị thế.<br>
+          &bull; <strong>2. Xuyên SL / Lỗi <code>-2021</code>:</strong> Nếu giá vừa giật xuyên mốc SL ngay lúc đặt lệnh &rarr; đóng <code>MARKET</code> lập tức.<br>
+          &bull; <strong>3. Vượt TP1:</strong> Giá đã vượt TP1 ngay sau khi khớp &rarr; chốt <code>MARKET</code> phần TP1 ngay.<br>
+          &bull; <strong>4. Timeout mạng 3 lần:</strong> Tự kích hoạt <code>EMERGENCY_CLOSE</code> đóng vị thế ngay, <strong>tuyệt đối chống để lệnh trần</strong> không SL.
+        </div>
+        <div class="flow-box" style="border-left:4px solid #D97706;">
+          <h4>10. Đòn Bẩy <code>20&times; Cross</code> &amp; Min Volume Binance (<code>exchangeInfo</code>)</h4>
+          &bull; <strong>Đòn bẩy vận hành:</strong> <strong><code>20&times;</code> Cross Margin</strong> (5 lệnh tối đa cùng lúc chỉ chiếm ~<code>35%</code> Equity ở <code>Bao 400G</code> và ~<code>50%</code> Equity ở <code>Auto-Turbo 250G</code>, dư biên đệm an toàn lớn).<br>
+          &bull; <strong>Chuẩn hóa sàn tự động:</strong> Đọc trực tiếp <code>stepSize</code>, <code>minNotional</code>, <code>tickSize</code> từ <code>/fapi/v1/exchangeInfo</code> &mdash; luôn làm tròn xuống (<code>floor</code>) theo bước giá/khối lượng và bỏ qua lệnh nếu khối lượng sau làm tròn <code>&lt; minNotional</code>.
         </div>
       </div>
     </div>
