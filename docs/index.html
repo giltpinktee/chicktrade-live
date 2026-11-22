@@ -401,9 +401,9 @@
       <div class="kpi-sub num" id="kpi-equity-sub">Gốc $10,000 · PnL nổi $0.00</div>
     </div>
     <div class="kpi-card" style="border-top-color:#0284C7;">
-      <div class="kpi-lbl">Bậc Lãi Kép S2 (0–50 Bậc)</div>
-      <div class="kpi-val num" id="kpi-step">Bậc 0 / 50</div>
-      <div class="kpi-sub num" id="kpi-step-sub">Sizing Base: $10,000 (Đệm -10%)</div>
+      <div class="kpi-lbl">Bậc Lãi Kép S2 (Không Giới Hạn)</div>
+      <div class="kpi-val num" id="kpi-step">Bậc 0 (&infin;)</div>
+      <div class="kpi-sub num" id="kpi-step-sub">Sizing Base: $10,000 (Đệm -10% · Cap $300k/$150k)</div>
     </div>
     <div class="kpi-card" style="border-top-color:#D97706;">
       <div class="kpi-lbl">Bao Giá · Đòn Bẩy · Phanh</div>
@@ -502,7 +502,7 @@
   </section>
 
   <footer class="footer-note">
-    CHICKTRADE v3.0 &middot; U3_HTF_MACRO_ATR (58 Setups) &middot; S2 50 Bậc + Trần $300k/$150k &middot; Vận hành $0/tháng trên GitHub Actions + Pages
+    CHICKTRADE v3.0 &middot; U3_HTF_MACRO_ATR (58 Setups) &middot; S2 Không Giới Hạn Bậc + Trần $300k/$150k &middot; Vận hành $0/tháng trên GitHub Actions + Pages
   </footer>
 
 </main>
@@ -590,8 +590,8 @@
     document.getElementById('kpi-equity-sub').innerHTML =
       `ROI <b style="color:${liveRoi >= 0 ? '#059669' : '#DC2626'}">${liveRoi >= 0 ? '+' : ''}${liveRoi.toFixed(2)}%</b> · Đã chốt ${fmtUsd(realizedEq)} · Nổi <b style="color:${unr >= 0 ? '#059669' : '#DC2626'}">${fmtUsd(unr, true)}</b>`;
 
-    document.getElementById('kpi-step').textContent = `Bậc ${acc.step || 0} / 50`;
-    document.getElementById('kpi-step-sub').textContent = `Sizing Base: ${fmtUsd(acc.tier_capital || 10000)} (Đệm -10%)`;
+    document.getElementById('kpi-step').textContent = `Bậc ${acc.step || 0} (∞)`;
+    document.getElementById('kpi-step-sub').textContent = `Sizing Base: ${fmtUsd(acc.tier_capital || 10000)} (Đệm -10% · Cap $300k/$150k)`;
 
     const bufLabel = acc.turbo_active ? 'Turbo 250G ⚡' : `Bao ${acc.buffer_units || 400}G`;
     document.getElementById('kpi-mode').textContent = `${bufLabel} · ${acc.leverage || 20}×`;

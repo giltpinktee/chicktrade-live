@@ -792,12 +792,11 @@ def render_color_tier_legend_html() -> str:
     """
 
 
-def render_rog_calculator_and_ladder_html() -> str:
-    """Render Utility 1 (Interactive USD & 1U Calculator) and Utility 2 (50-Step S2 Compounding 1U Ladder Table) in Tab 1."""
-    step_options = []
+def render_rog_calculator_and_ladder_html(max_ladder_step: int = 60) -> str:
+    """Render Utility 1 (Interactive USD & 1U Calculator — Unlimited Step Input) and Utility 2 (S2 Compounding Ladder Table)."""
     initial_rows = []
     base_default = 10000.0
-    for s in range(51):
+    for s in range(max_ladder_step + 1):
         mult = 1.08 ** s
         pct_gain = (mult - 1.0) * 100.0
         cap_s = base_default * mult
@@ -807,11 +806,6 @@ def render_rog_calculator_and_ladder_html() -> str:
         u250_045 = u250_10 * 0.45
         sl5_400 = -5.0 * u400_10
         sl5_250 = -5.0 * u250_10
-        sel_attr = ' selected="selected"' if s == 0 else ""
-        turbo_tag = " [Đủ mốc >= 1.25x bật Turbo 250G]" if mult >= 1.25 else ""
-        step_options.append(
-            f'<option value="{s}"{sel_attr}>Bậc {s} (&times;{mult:.3f} · +{pct_gain:.1f}%){turbo_tag}</option>'
-        )
 
         active_cls = " step-active" if s == 0 else ""
         active_badge = '<span class="step-active-pill" id="step-pill-0">Đang chọn</span>' if s == 0 else f'<span class="step-active-pill" id="step-pill-{s}" style="display:none;">Đang chọn</span>'
@@ -864,20 +858,18 @@ def render_rog_calculator_and_ladder_html() -> str:
           </div>
         </div>
 
-        <!-- Ô 2: Chọn Bậc lãi kép (Bậc 0 -> Bậc 50) -->
+        <!-- Ô 2: Nhập tự do bất kỳ Bậc lãi kép nào (0 -> 200+) -->
         <div class="calc-field">
           <div>
-            <label for="calc-step">2. Bậc Lãi Kép S2 (Bậc 0 &rarr; 50 · +8%/bậc · Đệm -10%)</label>
-            <select id="calc-step" class="calc-select num" onchange="updateRogCalculator()">
-              {''.join(step_options)}
-            </select>
+            <label for="calc-step">2. Bậc Lãi Kép S2 (Không giới hạn · Nhập 0 &rarr; 200+)</label>
+            <input type="number" id="calc-step" class="calc-input num" value="0" min="0" max="200" step="1" oninput="updateRogCalculator()">
           </div>
           <div class="calc-quick-btns" id="q-step-group">
             <button type="button" class="q-btn num active" onclick="selectStepRow(0)">Bậc 0</button>
             <button type="button" class="q-btn num" onclick="selectStepRow(3)">Bậc 3 (Turbo)</button>
             <button type="button" class="q-btn num" onclick="selectStepRow(20)">Bậc 20</button>
-            <button type="button" class="q-btn num" onclick="selectStepRow(35)">Bậc 35</button>
             <button type="button" class="q-btn num" onclick="selectStepRow(50)">Bậc 50</button>
+            <button type="button" class="q-btn num" onclick="selectStepRow({max_ladder_step})">Bậc {max_ladder_step}</button>
           </div>
         </div>
 
@@ -930,7 +922,7 @@ def render_rog_calculator_and_ladder_html() -> str:
         <div class="calc-kpi-box" style="border-top: 3px solid #D97706;">
           <span class="kpi-lbl">1. Vốn Tại Bậc Đang Chọn ($)</span>
           <strong class="kpi-val num" id="calc-out-step-cap" style="color:#B45309;">$10,000.00</strong>
-          <span class="kpi-sub num" id="calc-out-step-sub">Bậc 0/50 (&times;1.000 vốn gốc · +0.0% · S2 đệm -10%)</span>
+          <span class="kpi-sub num" id="calc-out-step-sub">Bậc 0 (Không giới hạn · &times;1.000 vốn gốc · +0.0% · S2 đệm -10%)</span>
         </div>
         <div class="calc-kpi-box" style="border-top: 3px solid #0284C7;">
           <span class="kpi-lbl">2. Giá Trị 1U Thực Tế ($)</span>
@@ -950,11 +942,11 @@ def render_rog_calculator_and_ladder_html() -> str:
       </div>
     </div>
 
-    <!-- UTILITY 2: 50-STEP S2 COMPOUNDING 1U LADDER TABLE -->
+    <!-- UTILITY 2: UNLIMITED S2 COMPOUNDING 1U LADDER TABLE (0 -> MAX_STEP) -->
     <div class="section-card">
       <div class="section-head">
-        <h3>📈 Bảng Lộ Trình Giá Trị 1U Qua 50 Bậc Lãi Kép S2 (Bậc 0 &rarr; Bậc 50 · +8%/Bậc · Đệm -10% mới hạ bậc · Cap $300k/$150k)</h3>
-        <span style="font-size:12px;color:#0369A1;font-weight:600;">Bấm vào dòng Bậc bất kỳ bên dưới để đưa số liệu lên Máy Tính</span>
+        <h3>📈 Bảng Lộ Trình Giá Trị 1U Qua Các Bậc Lãi Kép S2 (Hiển thị Bậc 0 &rarr; Bậc {max_ladder_step} · Thực tế Không Giới Hạn · Đệm -10% · Cap $300k/$150k)</h3>
+        <span style="font-size:12px;color:#0369A1;font-weight:600;">Bấm dòng bên dưới hoặc gõ số bậc bất kỳ lên Máy Tính</span>
       </div>
       <table class="compact-tbl" id="tbl-20-step-ladder">
         <colgroup>
@@ -966,7 +958,7 @@ def render_rog_calculator_and_ladder_html() -> str:
         </colgroup>
         <thead>
           <tr>
-            <th title="Bậc lãi kép S2 từ Bậc 0 (Vốn gốc) đến Bậc 50 (+8% mỗi bậc = x46.902 vốn gốc), giữ cố định volume theo bậc và chỉ hạ 1 bậc khi tụt quá -10%. Từ Bậc 3 (>= 1.25x vốn gốc) đủ điều kiện bật Auto-Turbo 250G">1. Bậc Lãi Kép S2 (0 &rarr; 50)</th>
+            <th title="Bậc lãi kép S2 tự động tăng không giới hạn (+8% mỗi bậc), giữ cố định volume theo bậc và chỉ hạ 1 bậc khi tụt quá -10%. Từ Bậc 3 (>= 1.25x vốn gốc) đủ điều kiện bật Auto-Turbo 250G">1. Bậc Lãi Kép S2 (0 &rarr; {max_ladder_step}+)</th>
             <th title="Mốc vốn tại từng bậc = Vốn gốc x (1.08 ^ Bậc)">2. Mốc Vốn Tại Bậc ($)</th>
             <th title="Giá trị 1U ở chế độ Bao 400 giá chuẩn tại mức Volume 1.0x (Core), 0.45x (Sniper/Scout) và mức Volume đang chọn">3. 1U — Bao 400G (1.0&times; / 0.45&times;)</th>
             <th title="Giá trị 1U ở chế độ Auto-Turbo Bao 250 giá tại mức Volume 1.0x, 0.45x và mức Volume đang chọn">4. 1U — Turbo 250G (1.0&times; / 0.45&times;)</th>
@@ -1003,6 +995,9 @@ def main():
     by3 = summary.get("base_400g_blind_y3", summary.get("base_400g_oos_6m", {}))
     t36 = summary.get("auto_turbo_36m", summary.get("auto_turbo_12m", {}))
     ty3 = summary.get("auto_turbo_blind_y3", summary.get("auto_turbo_oos_6m", {}))
+    max_step_400 = int(b36.get("max_step", 50))
+    max_step_250 = int(t36.get("max_step", 60))
+    max_ladder_step = max(60, max_step_400, max_step_250)
 
     # Build 6 Individual Coin Tabs HTML
     coin_tabs_html = []
@@ -1949,7 +1944,7 @@ def main():
     <div class="hero-meta-bar">
       <span><b>Dữ liệu 3 năm:</b> <span class="nw"><code>01/11/2023 &rarr; 31/10/2026</code></span> <em class="nw">(36 tháng trọn vẹn &middot; 315,648 nến 5m/coin &middot; Binance USD-M Futures)</em></span>
       <span><b>Chia kiểm chứng:</b> <span class="nw"><code>Train 2Y (IS): 11/2023 &ndash; 10/2025</code></span> &middot; <span class="nw"><code>Thi Mù Năm 3 (OOS): 11/2025 &ndash; 10/2026</code></span></span>
-      <span><b>Chuẩn 1U v3.0:</b> <span class="nw"><code>1U = U3_HTF_MACRO_ATR (4H EMA20 &times; &gamma;_tf)</code></span> &middot; <span class="nw">Phí <code>0.02%</code>/<code>0.05%</code> + trượt <code>0.01%</code></span> &middot; <span class="nw">Lãi kép 50 bậc <code>S2</code> (<code>+8%/bậc</code>, đệm <code>-10%</code>)</span> &middot; <span class="nw">Phanh <code>PORTFOLIO 2-SL &rarr; Shadow-Win</code></span></span>
+      <span><b>Chuẩn 1U v3.0:</b> <span class="nw"><code>1U = U3_HTF_MACRO_ATR (4H EMA20 &times; &gamma;_tf)</code></span> &middot; <span class="nw">Phí <code>0.02%</code>/<code>0.05%</code> + trượt <code>0.01%</code></span> &middot; <span class="nw">Lãi kép <code>S2 Không Giới Hạn Bậc</code> (<code>+8%/bậc</code>, đệm <code>-10%</code>, Cap <code>$300k/$150k</code>)</span> &middot; <span class="nw">Phanh <code>PORTFOLIO 2-SL &rarr; Shadow-Win</code></span></span>
     </div>
   </div>
 </header>
@@ -2002,7 +1997,7 @@ def main():
         <strong style="color:#B45309;">6. Công Thức Nhẩm Nhanh Tiền Thật Tại Bậc 0 ($10,000 · Bao 400G)</strong>
         Tại vốn khởi điểm <strong>$10,000</strong> và mức <strong>Bao 400 giá</strong>, mỗi <code>1U = $25.00 USD</code>:<br>
         <code>Lãi USD = Số U &times; $25 &times; Mức Volume</code>.<br>
-        Ví dụ: Setup thắng <code>+40U</code> với <code>Volume 0.85&times;</code> &rarr; Lãi đơn <code>40 &times; $25 &times; 0.85 = +$850 USD</code> (chưa cộng lãi kép 50 bậc S2).
+        Ví dụ: Setup thắng <code>+40U</code> với <code>Volume 0.85&times;</code> &rarr; Lãi đơn <code>40 &times; $25 &times; 0.85 = +$850 USD</code> (chưa cộng lãi kép S2 không giới hạn bậc).
       </div>
     </div>
   </div>
@@ -2023,7 +2018,7 @@ def main():
           <div class="m-item">
             <span>Lãi Ròng 36 Tháng (11/2023&ndash;10/2026)</span>
             <strong class="num" style="color:#059669;">+${int(round(float(b36['net_profit_usd']))):,d} (+{float(b36['ret_pct']):,.1f}%)</strong>
-            <small class="num">Lãi kép 50 bậc S2 (Cap $300k/$150k) &rarr; Tổng tài sản <strong>${int(round(float(b36['final_eq_usd']))):,d}</strong> ({int(b36.get('trades', 0)):,d} lệnh)</small>
+            <small class="num">Lãi kép S2 Không Giới Hạn Bậc (Max <b>Bậc {max_step_400}</b> · Cap $300k/$150k) &rarr; Tổng tài sản <strong>${int(round(float(b36['final_eq_usd']))):,d}</strong> ({int(b36.get('trades', 0)):,d} lệnh)</small>
           </div>
           <div class="m-item">
             <span>Sụt Giảm Tối Đa (MaxDD 36 Tháng)</span>
@@ -2050,7 +2045,7 @@ def main():
           <div class="m-item">
             <span>Lãi Ròng 36 Tháng (11/2023&ndash;10/2026)</span>
             <strong class="num" style="color:#15803D;">+${int(round(float(t36['net_profit_usd']))):,d} (+{float(t36['ret_pct']):,.1f}%)</strong>
-            <small class="num">Lãi kép 50 bậc S2 (Cap $300k/$150k) &rarr; Tổng tài sản <strong>${int(round(float(t36['final_eq_usd']))):,d}</strong> (&times;{float(t36['final_eq_usd'])/10000.0:.2f} vốn)</small>
+            <small class="num">Lãi kép S2 Không Giới Hạn Bậc (Max <b>Bậc {max_step_250}</b> · Cap $300k/$150k) &rarr; Tổng tài sản <strong>${int(round(float(t36['final_eq_usd']))):,d}</strong> (&times;{float(t36['final_eq_usd'])/10000.0:.2f} vốn)</small>
           </div>
           <div class="m-item">
             <span>Sụt Giảm Tối Đa (MaxDD 36 Tháng)</span>
@@ -2068,7 +2063,7 @@ def main():
 
     <div class="chart-single-box" id="chart-overview-coins"></div>
 
-    {render_rog_calculator_and_ladder_html()}
+    {render_rog_calculator_and_ladder_html(max_ladder_step)}
 
     <div class="section-card">
       <div class="section-head">
@@ -2154,9 +2149,9 @@ def main():
           &bull; <strong>Đánh Nháp Ngầm (Shadow-Win):</strong> Khi cả danh mục dính <strong>2 lệnh SL gốc liên tiếp</strong> ở nhóm Core (<code>Vol &gt; 0.45&times;</code>), bot tạm dừng tiền thật và đợi <strong>1 lệnh thắng nháp</strong> mới mở lại (tối đa 72h).
         </div>
         <div class="flow-box">
-          <h4>6. Quản Trị Danh Mục, Lãi Kép 50 Bậc S2 &amp; Auto-Turbo</h4>
+          <h4>6. Quản Trị Danh Mục, Lãi Kép S2 Không Giới Hạn &amp; Auto-Turbo</h4>
           &bull; <strong>Trần Danh Mục:</strong> Tối đa <strong>5 lệnh mở cùng lúc</strong> (mỗi coin tối đa 1 lệnh, tổng hệ số Volume mở &le; <code>4.25&times;</code>), tối đa <strong>10 lệnh/ngày</strong>, nghỉ trong ngày nếu lỗ ngày chạm <code>-5%</code>.<br>
-          &bull; <strong>Lãi Kép 50 Bậc S2 (+8%/bậc, đệm -10%, Cap $300k/$150k) &amp; Auto-Turbo:</strong> Chuỗi 36M đạt <strong>Bao 400G (+{float(b36['ret_pct']):,.1f}% &rarr; ${int(round(float(b36['final_eq_usd']))):,d})</strong>; khi bật <strong>Auto-Turbo 250G</strong> (&ge; <code>$12,500</code>, khóa sàn &ge; <code>$11,000</code>) đạt <strong>+{float(t36['ret_pct']):,.1f}% &rarr; ${int(round(float(t36['final_eq_usd']))):,d}</strong>.
+          &bull; <strong>Lãi Kép S2 Không Giới Hạn Bậc (+8%/bậc, đệm -10%, Cap $300k/$150k):</strong> Chuỗi 36M đạt <strong>Bao 400G (+{float(b36['ret_pct']):,.1f}% &rarr; ${int(round(float(b36['final_eq_usd']))):,d} · Max Bậc {max_step_400})</strong>; khi bật <strong>Auto-Turbo 250G</strong> (&ge; <code>$12,500</code>, khóa sàn &ge; <code>$11,000</code>) đạt <strong>+{float(t36['ret_pct']):,.1f}% &rarr; ${int(round(float(t36['final_eq_usd']))):,d} (Max Bậc {max_step_250})</strong>.
         </div>
       </div>
 
@@ -2324,7 +2319,8 @@ def main():
   function updateRogCalculator() {{
     const rawCap = parseFloat(document.getElementById('calc-base-cap').value);
     const baseCap = (!isNaN(rawCap) && rawCap > 0) ? rawCap : 10000;
-    const step = parseInt(document.getElementById('calc-step').value) || 0;
+    const rawStep = parseInt(document.getElementById('calc-step').value);
+    const step = (!isNaN(rawStep) && rawStep >= 0) ? Math.min(rawStep, 200) : 0;
     const baoMode = parseFloat(document.getElementById('calc-bao-mode').value) || 400;
     const rawU = parseFloat(document.getElementById('calc-u-profit').value);
     const uProfit = !isNaN(rawU) ? rawU : 0;
@@ -2366,7 +2362,7 @@ def main():
 
     document.getElementById('calc-out-step-cap').textContent = fmtUsd(stepCap);
     document.getElementById('calc-out-step-sub').textContent =
-      'Bậc ' + step + '/50 (\u00d7' + mult.toFixed(3) + ' vốn gốc \u00b7 +' + pctStepGain.toFixed(1) + '% \u00b7 S2 đệm -10%)';
+      'Bậc ' + step + ' (Không giới hạn \u00b7 \u00d7' + mult.toFixed(3) + ' vốn gốc \u00b7 +' + pctStepGain.toFixed(1) + '% \u00b7 S2 đệm -10%)';
 
     document.getElementById('calc-out-1u-actual').textContent = fmtUsd(u1Actual) + ' / 1U';
     document.getElementById('calc-out-1u-sub').textContent =
@@ -2383,8 +2379,8 @@ def main():
     document.getElementById('calc-out-sl-sub').textContent =
       'SL 5U (BTC): -' + sl5Pct.toFixed(2) + '% \u00b7 SL 6U (Alt): -' + sl6Pct.toFixed(2) + '% vốn bậc';
 
-    // Update all 51 rows (Bậc 0 -> Bậc 50) in the 50-Step S2 Compounding Ladder table
-    for (let s = 0; s <= 50; s++) {{
+    // Update all rows (Bậc 0 -> max_ladder_step) in the S2 Compounding Ladder table
+    for (let s = 0; s <= {max_ladder_step}; s++) {{
       const m_s = Math.pow(1.08, s);
       const cap_s = baseCap * m_s;
       const u400_10 = cap_s / 400.0;

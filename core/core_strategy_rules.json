@@ -33,9 +33,10 @@
   },
   "max_open_mult_cap": 4.25,
   "max_trades_per_day": 10,
-  "compounding_steps": 50,
+  "compounding_steps": null,
+  "compounding_unlimited": true,
   "step_gain_pct": 0.08,
-  "step_sizing_mode": "S2_LOCKED_HYSTERESIS_10PCT",
+  "step_sizing_mode": "S2_LOCKED_HYSTERESIS_10PCT_UNLIMITED",
   "liquidity_cap_usd": {
     "BTCUSDT": 300000,
     "ETHUSDT": 300000,
@@ -79,7 +80,8 @@
       "calmar": 448.75,
       "pf": 1.37,
       "wr_pct": 64.57,
-      "trades": 2467
+      "trades": 2467,
+      "max_step": 50
     },
     "base_400g_train_2y": {
       "ret_pct": 1402.11,
@@ -102,14 +104,15 @@
       "trades": 761
     },
     "auto_turbo_36m": {
-      "ret_pct": 9934.92,
-      "final_eq_usd": 1003492.4,
-      "net_profit_usd": 993492.4,
+      "ret_pct": 10383.02,
+      "final_eq_usd": 1048301.98,
+      "net_profit_usd": 1038301.98,
       "max_dd_pct": -13.33,
-      "calmar": 745.47,
-      "pf": 1.45,
+      "calmar": 779.1,
+      "pf": 1.46,
       "wr_pct": 64.56,
-      "trades": 2466
+      "trades": 2466,
+      "max_step": 60
     },
     "auto_turbo_train_2y": {
       "ret_pct": 2142.4,

@@ -406,12 +406,12 @@ def _calc_leg_pnl(entry: float, exit_px: float, qty: float, d: int, exit_maker: 
 
 
 def _apply_s2_step(state: dict) -> None:
-    """Update S2_LOCKED_HYSTERESIS_10PCT (50 steps, +8%/step, -10% hysteresis)."""
+    """Update S2_LOCKED_HYSTERESIS_10PCT (unlimited steps, +8%/step, -10% hysteresis)."""
     acc = state["account"]
     eq = float(acc["equity"])
     step = int(acc["step"])
     tier_cap = float(acc["tier_capital"])
-    while step < 50 and eq >= 10_000.0 * (1.08 ** (step + 1)):
+    while eq >= 10_000.0 * (1.08 ** (step + 1)):
         step += 1
         tier_cap = 10_000.0 * (1.08 ** step)
     while step > 0 and eq < tier_cap * 0.90:
@@ -457,7 +457,7 @@ def _init_state(turbo_enabled: bool) -> dict:
             "roi_pct": 0.0,
             "step": 0,
             "tier_capital": 10_000.0,
-            "sizing_policy": "S2_LOCKED_HYSTERESIS_10PCT (50 Bậc · Cap $300k/$150k)",
+            "sizing_policy": "S2_LOCKED_HYSTERESIS_10PCT (Không giới hạn bậc · Cap $300k/$150k)",
             "buffer_units": 400,
             "turbo_enabled": turbo_enabled,
             "turbo_active": False,
@@ -525,6 +525,7 @@ def load_or_init_state(turbo_enabled: bool) -> dict:
             with open(OUT_JSON, encoding="utf-8") as f:
                 st = json.load(f)
             st["account"]["turbo_enabled"] = turbo_enabled
+            st["account"]["sizing_policy"] = "S2_LOCKED_HYSTERESIS_10PCT (Không giới hạn bậc · Cap $300k/$150k)"
             return st
         except Exception as exc:
             print(f"[WARN] Could not parse existing {OUT_JSON}, starting fresh: {exc}")
@@ -688,7 +689,7 @@ def update_open_positions(
         events.append(
             f"{emoji} <b>ĐÓNG LỆNH ({closed_outcome})</b> | {sym} ({tf}) {pos['setup_code']} {pos['direction']}{must_tag}\n"
             f"Thắng tiền: <b>{pos.get('profit_wr_pct', 0):.1f}%</b> | WR: <b>{pos.get('wr_pct', 0):.1f}%</b>\n"
-            f"PnL: <b>{tot_pnl:+.2f} USD</b> · Equity: <b>${acc['equity']:,.2f}</b> (Bậc {acc['step']}/50)"
+            f"PnL: <b>{tot_pnl:+.2f} USD</b> · Equity: <b>${acc['equity']:,.2f}</b> (Bậc {acc['step']} · ∞)"
         )
 
     state["open_positions"] = still_open
@@ -880,7 +881,7 @@ def main():
         _send_telegram(ev)
 
     print(
-        f"[OK] {state['updated_at_utc']} | Equity=${acc['equity']:,.2f} (Step {acc['step']}/50) | "
+        f"[OK] {state['updated_at_utc']} | Equity=${acc['equity']:,.2f} (Step {acc['step']} Unlimited) | "
         f"Open={len(state['open_positions'])} | Closed={state['stats']['total_trades']} | "
         f"Signals={len(signals)} | U3_Coins={len(rates_rows)}"
     )

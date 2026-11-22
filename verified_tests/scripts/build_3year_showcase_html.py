@@ -56,11 +56,12 @@ def sim_u3_with_trace(
     hard_floor_eq: float = 11_000.0,
     core_only_sl_trigger: bool = True,
     window_start_ts: pd.Timestamp = pd.Timestamp("2023-11-01 00:00:00", tz="UTC"),
-    max_step: int = 50,
+    max_step: Optional[int] = None,
     apply_liq_cap: bool = True,
 ) -> Tuple[dict, List[dict], List[dict]]:
-    """Mirror sim_s2_steps identically while capturing exact timestamped equity & DD curve."""
+    """Mirror sim_s2_steps identically (unlimited steps when max_step=None) while capturing equity & DD trace."""
     step = 0
+    max_step_reached = 0
     tier_capital = 10_000.0
     equity = 10_000.0
     peak_eq = equity
@@ -88,7 +89,7 @@ def sim_u3_with_trace(
     port_paused_until = pd.Timestamp("1970-01-01", tz="UTC")
 
     def settle(now_ts: pd.Timestamp):
-        nonlocal equity, peak_eq, step, tier_capital, port_consec_sl, port_shadow_paused, port_paused_until, in_turbo
+        nonlocal equity, peak_eq, step, max_step_reached, tier_capital, port_consec_sl, port_shadow_paused, port_paused_until, in_turbo
         keep, done = [], []
         for ex_ts, tr in active:
             (done if ex_ts <= now_ts else keep).append((ex_ts, tr))
@@ -96,12 +97,13 @@ def sim_u3_with_trace(
         for ex_ts, tr in done:
             equity += tr["pnl"]
             peak_eq = max(peak_eq, equity)
-            while step < max_step and equity >= 10_000.0 * (1.08 ** (step + 1)):
+            while (max_step is None or step < max_step) and equity >= 10_000.0 * (1.08 ** (step + 1)):
                 step += 1
                 tier_capital = 10_000.0 * (1.08 ** step)
             while step > 0 and equity < tier_capital * 0.90:
                 step -= 1
                 tier_capital = 10_000.0 * (1.08 ** step)
+            max_step_reached = max(max_step_reached, step)
             dk = tr["dk"]
             daily_pnl[dk] = daily_pnl.get(dk, 0.0) + tr["pnl"]
 
@@ -230,6 +232,8 @@ def sim_u3_with_trace(
         "ret": ret,
         "mdd": mdd,
         "calmar": ret / max(abs(mdd), 0.1),
+        "max_step": max_step_reached,
+        "final_step": step,
     }
     return metrics, closed, curve_points
 
@@ -430,30 +434,35 @@ def main():
     assert n_setups == 58, f"Expected 58 v3.0 setups, got {n_setups}"
     print(f"Trained {n_setups} v3.0 setups strictly on Train 2Y (11/2023 -> 10/2025) under U3_HTF_MACRO_ATR.")
 
-    # 2. Full 36M compounding curve traces + parity assertions (S2 50-Step + Liquidity Cap)
+    # 2. Full 36M compounding curve traces + parity assertions (S2 Unlimited Steps + Liquidity Cap)
     f36_400, _, pts_400 = sim_u3_with_trace(
         tf_dfs_map, sigs_36m, wf_rules, u3_arrays, 400.0, None,
-        window_start_ts=ts_y1_start, max_step=50, apply_liq_cap=True,
+        window_start_ts=ts_y1_start, max_step=None, apply_liq_cap=True,
     )
     f36_250, _, pts_250 = sim_u3_with_trace(
         tf_dfs_map, sigs_36m, wf_rules, u3_arrays, 400.0, 250.0,
-        window_start_ts=ts_y1_start, max_step=50, apply_liq_cap=True,
+        window_start_ts=ts_y1_start, max_step=None, apply_liq_cap=True,
     )
 
-    ref_400 = sim_s2_steps(tf_dfs_map, sigs_36m, wf_rules, u3_arrays, 50, True, ts_y1_start, ts_y3_end, 400.0, None)
-    ref_250 = sim_s2_steps(tf_dfs_map, sigs_36m, wf_rules, u3_arrays, 50, True, ts_y1_start, ts_y3_end, 400.0, 250.0)
+    ref_400 = sim_s2_steps(tf_dfs_map, sigs_36m, wf_rules, u3_arrays, 10_000, True, ts_y1_start, ts_y3_end, 400.0, None)
+    ref_250 = sim_s2_steps(tf_dfs_map, sigs_36m, wf_rules, u3_arrays, 10_000, True, ts_y1_start, ts_y3_end, 400.0, 250.0)
     assert abs(f36_400["final_eq"] - ref_400["final_eq"]) < 0.05
     assert abs(f36_250["final_eq"] - ref_250["final_eq"]) < 0.05
 
-    # Individual periods (reset $10,000, S2 50-Step + Liquidity Cap)
-    y1_400 = sim_s2_steps(tf_dfs_map, sigs_y1, wf_rules, u3_arrays, 50, True, ts_y1_start, ts_y1_end, 400.0, None)
-    y1_250 = sim_s2_steps(tf_dfs_map, sigs_y1, wf_rules, u3_arrays, 50, True, ts_y1_start, ts_y1_end, 400.0, 250.0)
-    y2_400 = sim_s2_steps(tf_dfs_map, sigs_y2, wf_rules, u3_arrays, 50, True, ts_y2_start, ts_y2_end, 400.0, None)
-    y2_250 = sim_s2_steps(tf_dfs_map, sigs_y2, wf_rules, u3_arrays, 50, True, ts_y2_start, ts_y2_end, 400.0, 250.0)
-    t2_400 = sim_s2_steps(tf_dfs_map, sigs_train_2y, wf_rules, u3_arrays, 50, True, ts_y1_start, ts_y2_end, 400.0, None)
-    t2_250 = sim_s2_steps(tf_dfs_map, sigs_train_2y, wf_rules, u3_arrays, 50, True, ts_y1_start, ts_y2_end, 400.0, 250.0)
-    y3_400 = sim_s2_steps(tf_dfs_map, sigs_blind_y3, wf_rules, u3_arrays, 50, True, ts_y3_start, ts_y3_end, 400.0, None)
-    y3_250 = sim_s2_steps(tf_dfs_map, sigs_blind_y3, wf_rules, u3_arrays, 50, True, ts_y3_start, ts_y3_end, 400.0, 250.0)
+    # Individual periods (reset $10,000, S2 Unlimited Steps + Liquidity Cap)
+    y1_400 = sim_s2_steps(tf_dfs_map, sigs_y1, wf_rules, u3_arrays, 10_000, True, ts_y1_start, ts_y1_end, 400.0, None)
+    y1_250 = sim_s2_steps(tf_dfs_map, sigs_y1, wf_rules, u3_arrays, 10_000, True, ts_y1_start, ts_y1_end, 400.0, 250.0)
+    y2_400 = sim_s2_steps(tf_dfs_map, sigs_y2, wf_rules, u3_arrays, 10_000, True, ts_y2_start, ts_y2_end, 400.0, None)
+    y2_250 = sim_s2_steps(tf_dfs_map, sigs_y2, wf_rules, u3_arrays, 10_000, True, ts_y2_start, ts_y2_end, 400.0, 250.0)
+    t2_400 = sim_s2_steps(tf_dfs_map, sigs_train_2y, wf_rules, u3_arrays, 10_000, True, ts_y1_start, ts_y2_end, 400.0, None)
+    t2_250 = sim_s2_steps(tf_dfs_map, sigs_train_2y, wf_rules, u3_arrays, 10_000, True, ts_y1_start, ts_y2_end, 400.0, 250.0)
+    y3_400 = sim_s2_steps(tf_dfs_map, sigs_blind_y3, wf_rules, u3_arrays, 10_000, True, ts_y3_start, ts_y3_end, 400.0, None)
+    y3_250 = sim_s2_steps(tf_dfs_map, sigs_blind_y3, wf_rules, u3_arrays, 10_000, True, ts_y3_start, ts_y3_end, 400.0, 250.0)
+
+    print("Bao 400G 36M (Unlimited S2 + LiqCap):", f36_400)
+    print("Turbo 250G 36M (Unlimited S2 + LiqCap):", f36_250)
+    print("Bao 400G Blind Y3:", y3_400)
+    print("Turbo 250G Blind Y3:", y3_250)
 
     period_specs = [
         ("Năm 1 (11/2023 – 10/2024)", "Train · Reset $10k", y1_400, y1_250, "train"),
@@ -970,20 +979,20 @@ def main():
   <div class="shell">
     <div class="hero-top">
       <div>
-        <div class="eyebrow">CHICKTRADE v3.0 &middot; {n_setups} Setups &middot; S2 50 Bậc + Cap $300k/$150k + U3_HTF_MACRO_ATR</div>
-        <h1>CHICKTRADE v3.0 &mdash; BÁO CÁO TỔNG QUAN 36 THÁNG (U3_HTF_MACRO_ATR &middot; S2 50 BẬC)</h1>
-        <p class="hero-sub"><strong>S2 &middot; 50 Bậc Lãi Kép (đệm -10% mới hạ bậc) + Trần Thanh Khoản ($300k BTC/ETH, $150k Alt) + U3_HTF_MACRO_ATR (1U biến thiên theo nến 4H)</strong>: Train 2Y (<code>11/2023&rarr;10/2025</code>) &amp; Thi Mù Năm 3 (<code>11/2025&rarr;10/2026</code>)</p>
+        <div class="eyebrow">CHICKTRADE v3.0 &middot; {n_setups} Setups &middot; S2 Không Giới Hạn Bậc + Cap $300k/$150k + U3_HTF_MACRO_ATR</div>
+        <h1>CHICKTRADE v3.0 &mdash; BÁO CÁO TỔNG QUAN 36 THÁNG (U3_HTF_MACRO_ATR &middot; S2 KHÔNG GIỚI HẠN BẬC)</h1>
+        <p class="hero-sub"><strong>S2 &middot; Không Giới Hạn Bậc (đệm -10% mới hạ bậc) + Trần Thanh Khoản ($300k BTC/ETH, $150k Alt) + U3_HTF_MACRO_ATR (1U biến thiên theo nến 4H)</strong>: Train 2Y (<code>11/2023&rarr;10/2025</code>) &amp; Thi Mù Năm 3 (<code>11/2025&rarr;10/2026</code>)</p>
       </div>
       <div class="oos-verified-badge">
         <span class="b-lbl">VƯỢT BÀI THI MÙ NĂM 3 (11/2025&ndash;10/2026)</span>
         <span class="b-val num">+{y3_250['ret']:.2f}% (Auto-Turbo, DD {y3_250['mdd']:.2f}%) / +{y3_400['ret']:.2f}% (Bao 400G, DD {y3_400['mdd']:.2f}%)</span>
-        <span class="b-sub num">Full 36M: +{f36_250['ret']:,.1f}% (${f36_250['final_eq']:,.0f}) Turbo &middot; +{f36_400['ret']:,.1f}% (${f36_400['final_eq']:,.0f}) 400G</span>
+        <span class="b-sub num">Full 36M: +{f36_250['ret']:,.1f}% (${f36_250['final_eq']:,.0f} · Bậc {f36_250['max_step']}) Turbo &middot; +{f36_400['ret']:,.1f}% (${f36_400['final_eq']:,.0f} · Bậc {f36_400['max_step']}) 400G</span>
       </div>
     </div>
 
     <div class="meta-strip">
       <span><b>Toàn chuỗi 36 tháng:</b> <span class="nw"><code>01/11/2023 &rarr; 31/10/2026</code></span> <span class="nw">(2 Năm Train <code>11/2023&ndash;10/2025</code> + 1 Năm Thi Mù OOS <code>11/2025&ndash;10/2026</code> &middot; 6 Coin Futures &middot; Vốn <code>$10,000</code>)</span></span>
-      <span><b>Lãi kép &amp; Thanh khoản:</b> <span class="nw"><code>S2 · 50 Bậc (+8%/bậc, đệm -10%)</code></span> &middot; <span class="nw">Cap <code>$300k BTC/ETH · $150k Alt</code></span></span>
+      <span><b>Lãi kép &amp; Thanh khoản:</b> <span class="nw"><code>S2 · Không giới hạn bậc (+8%/bậc, đệm -10%)</code></span> &middot; <span class="nw">Cap <code>$300k BTC/ETH · $150k Alt</code></span></span>
       <span><b>Thước đo 1U &amp; Phí:</b> <span class="nw"><code>U3_HTF_MACRO_ATR (4H EMA20 &times; &gamma;_tf)</code></span> &middot; <span class="nw">Phí <code>0.02%/0.05%</code> + trượt <code>0.01%</code></span></span>
     </div>
   </div>
@@ -996,15 +1005,15 @@ def main():
     <div class="tear-kpi-card" style="border-top: 4px solid #EA580C;">
       <div class="tear-kpi-head">
         <h2>Chế Độ Tăng Tốc Auto-Turbo (400G &rarr; 250G)</h2>
-        <span class="pill-turbo">Khóa Sàn Cứng &ge; $11,000</span>
+        <span class="pill-turbo">Khóa Sàn &ge; $11,000 · Max Bậc {f36_250['max_step']}</span>
       </div>
       <div class="hero-figure-row">
         <span class="hero-eq" style="color:#C2410C;">$10,000 &rarr; ${f36_250['final_eq']:,.0f}</span>
         <span class="hero-ret-badge" style="background:#FFF7ED;color:#C2410C;border:1px solid #FED7AA;">+{f36_250['ret']:,.1f}% (+${pnl36_250:,.0f})</span>
       </div>
-      <p class="tear-desc">Chạy thông suốt 36 tháng (11/2023 &ndash; 10/2026) trên 1 tài khoản chung $10,000: nhân <strong>&times;{mult_250:.2f} vốn</strong> với sụt giảm tối đa chỉ <strong>{f36_250['mdd']:.2f}%</strong> và <strong>Calmar {f36_250['calmar']:.1f}</strong> (Blind Y3: <strong>+{y3_250['ret']:.2f}%</strong>).</p>
+      <p class="tear-desc">Chạy thông suốt 36 tháng (11/2023 &ndash; 10/2026) không giới hạn bậc (chỉ giữ trần thanh khoản <code>$300k/$150k</code>): nhân <strong>&times;{mult_250:.2f} vốn</strong>, đạt đỉnh <strong>Bậc {f36_250['max_step']}</strong>, MaxDD <strong>{f36_250['mdd']:.2f}%</strong>, Calmar <strong>{f36_250['calmar']:.1f}</strong>.</p>
       <div class="sub-stats-grid">
-        <div class="sub-stat"><span>Số Lệnh 36M</span><strong>{f36_250['trades']:,d}</strong></div>
+        <div class="sub-stat"><span>Max Step / Lệnh</span><strong>Bậc {f36_250['max_step']} · {f36_250['trades']:,d}</strong></div>
         <div class="sub-stat"><span>PF / WR / Calmar</span><strong style="color:#059669;">{f36_250['pf']:.2f} / {f36_250['wr']:.1f}% / {f36_250['calmar']:.1f}</strong></div>
         <div class="sub-stat"><span>Max Drawdown 36M</span><strong style="color:#DC2626;">{f36_250['mdd']:.2f}%</strong></div>
         <div class="sub-stat"><span>Tháng Có Lãi</span><strong style="color:#059669;">{green_250}/{tot_m} ({green_250/tot_m*100:.0f}%)</strong></div>
@@ -1014,15 +1023,15 @@ def main():
     <div class="tear-kpi-card" style="border-top: 4px solid #059669;">
       <div class="tear-kpi-head">
         <h2>Chế Độ Tiêu Chuẩn An Toàn (Bao 400 Giá)</h2>
-        <span class="pill-primary">Mặc Định An Toàn Tối Đa</span>
+        <span class="pill-primary">Mặc Định An Toàn · Max Bậc {f36_400['max_step']}</span>
       </div>
       <div class="hero-figure-row">
         <span class="hero-eq" style="color:#15803D;">$10,000 &rarr; ${f36_400['final_eq']:,.0f}</span>
         <span class="hero-ret-badge" style="background:#ECFDF5;color:#15803D;border:1px solid #A7F3D0;">+{f36_400['ret']:,.1f}% (+${pnl36_400:,.0f})</span>
       </div>
-      <p class="tear-desc">Đường cong vốn êm mượt nhất 36 tháng: nhân <strong>&times;{mult_400:.2f} vốn</strong> với Max Drawdown kỷ lục chỉ <strong>{f36_400['mdd']:.2f}%</strong> và <strong>Calmar {f36_400['calmar']:.1f}</strong> (Blind Y3: <strong>+{y3_400['ret']:.2f}%</strong>, DD {y3_400['mdd']:.2f}%).</p>
+      <p class="tear-desc">Đường cong vốn êm mượt nhất 36 tháng: nhân <strong>&times;{mult_400:.2f} vốn</strong>, đạt đỉnh <strong>Bậc {f36_400['max_step']}</strong> với Max Drawdown chỉ <strong>{f36_400['mdd']:.2f}%</strong> và Calmar <strong>{f36_400['calmar']:.1f}</strong> (Blind Y3: <strong>+{y3_400['ret']:.2f}%</strong>).</p>
       <div class="sub-stats-grid">
-        <div class="sub-stat"><span>Số Lệnh 36M</span><strong>{f36_400['trades']:,d}</strong></div>
+        <div class="sub-stat"><span>Max Step / Lệnh</span><strong>Bậc {f36_400['max_step']} · {f36_400['trades']:,d}</strong></div>
         <div class="sub-stat"><span>PF / WR / Calmar</span><strong style="color:#059669;">{f36_400['pf']:.2f} / {f36_400['wr']:.1f}% / {f36_400['calmar']:.1f}</strong></div>
         <div class="sub-stat"><span>Max Drawdown 36M</span><strong style="color:#DC2626;">{f36_400['mdd']:.2f}%</strong></div>
         <div class="sub-stat"><span>Tháng Có Lãi</span><strong style="color:#059669;">{green_400}/{tot_m} ({green_400/tot_m*100:.0f}%)</strong></div>
@@ -1173,8 +1182,8 @@ def main():
       <p><code>1U</code> biến thiên mượt theo nến <code>4H</code> đã đóng (<code>EMA20 &times; &gamma;_tf</code>, sàn <code>0.08%</code>) — loại bỏ nhiễu ngắn hạn và tự thích ứng qua mọi chu kỳ.</p>
     </div>
     <div class="arch-card" style="border-top-color:#059669;">
-      <h4>2. <code>S2 · 50 Bậc</code> Lãi Kép (Đệm -10%)</h4>
-      <p>Khóa cứng volume theo bậc đang đứng (tăng bậc mỗi <code>+8%</code>, tối đa 50 bậc) và chỉ hạ 1 bậc khi tụt quá <code>-10%</code> dưới mốc bậc, giúp hồi phục DD nhanh.</p>
+      <h4>2. <code>S2 · Không Giới Hạn Bậc</code> (Đệm -10%)</h4>
+      <p>Khóa cứng volume theo bậc đang đứng (tăng bậc mỗi <code>+8%</code>, tự động tăng vô hạn theo Equity) và chỉ hạ 1 bậc khi tụt quá <code>-10%</code> dưới mốc bậc.</p>
     </div>
     <div class="arch-card" style="border-top-color:#EA580C;">
       <h4>3. Trần Thanh Khoản ($300k / $150k)</h4>
@@ -1187,7 +1196,7 @@ def main():
   </section>
 
   <footer class="footer-note">
-    CHICKTRADE v3.0 (<code>U3_HTF_MACRO_ATR</code> &middot; <code>S2 50 Bậc</code> &middot; Cap <code>$300k/$150k</code>) &middot; 36 tháng (01/11/2023 &ndash; 31/10/2026) &middot; 58 Setup Train 2Y, Thi Mù OOS Năm 3.
+    CHICKTRADE v3.0 (<code>U3_HTF_MACRO_ATR</code> &middot; <code>S2 Không Giới Hạn Bậc</code> &middot; Cap <code>$300k/$150k</code>) &middot; 36 tháng (01/11/2023 &ndash; 31/10/2026) &middot; 58 Setup Train 2Y, Thi Mù OOS Năm 3.
   </footer>
 
 </main>
