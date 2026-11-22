@@ -2,8 +2,8 @@
 <html lang="vi">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>CHICKTRADE v3.0 — Paper-Test $10,000 Live Dashboard</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>CHICKTRADE v3.0 — Paper-Test $10,000 Live</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -13,11 +13,13 @@
   :root {
     --bg: #F8FAFC;
     --card: #FFFFFF;
+    --surface: #F1F5F9;
     --border: #E2E8F0;
     --text: #0F172A;
     --sec: #475569;
     --muted: #64748B;
     --emerald: #059669;
+    --emerald-deep: #15803D;
     --emerald-bg: #ECFDF5;
     --rose: #DC2626;
     --rose-bg: #FFF1F2;
@@ -25,10 +27,11 @@
     --sky-bg: #F0F9FF;
     --amber: #D97706;
     --amber-bg: #FFFBEB;
+    --purple: #6D28D9;
     --sans: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Consolas, monospace;
   }
-  * { box-sizing: border-box; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body {
     margin: 0;
     padding: 0;
@@ -45,33 +48,38 @@
   .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
   .nw { white-space: nowrap; }
 
+  /* Sticky Top Header */
   .topbar {
-    background: #FFFFFF;
+    background: rgba(255, 255, 255, 0.96);
+    backdrop-filter: blur(8px);
     border-bottom: 1px solid var(--border);
-    padding: 14px 16px;
+    padding: 10px 14px;
     position: sticky;
     top: 0;
-    z-index: 30;
+    z-index: 40;
     box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
   }
   .topbar-inner {
-    max-width: 1280px;
+    max-width: 1180px;
     margin: 0 auto;
     display: flex;
     flex-wrap: wrap;
     justify-content: space-between;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
   }
-  .brand h1 {
-    margin: 0;
-    font-size: 16.5px;
-    font-weight: 800;
-    letter-spacing: -0.02em;
+  .brand-row {
     display: flex;
     align-items: center;
     gap: 8px;
     flex-wrap: wrap;
+  }
+  .brand-title {
+    margin: 0;
+    font-size: 15.5px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    color: var(--text);
   }
   .live-pill {
     display: inline-flex;
@@ -81,106 +89,226 @@
     color: var(--emerald);
     border: 1px solid #A7F3D0;
     border-radius: 999px;
-    padding: 2px 9px;
-    font-size: 11px;
+    padding: 2px 8px;
+    font-size: 10.5px;
     font-weight: 700;
   }
   .live-dot {
-    width: 7px;
-    height: 7px;
+    width: 6.5px;
+    height: 6.5px;
     border-radius: 50%;
     background: var(--emerald);
     animation: pulseDot 1.6s infinite;
   }
   @keyframes pulseDot {
     0%, 100% { opacity: 1; transform: scale(1); }
-    50% { opacity: 0.45; transform: scale(1.25); }
+    50% { opacity: 0.45; transform: scale(1.3); }
   }
   .brand-sub {
-    margin: 3px 0 0 0;
-    font-size: 11.5px;
-    color: var(--sec);
+    margin: 2px 0 0 0;
+    font-size: 11px;
+    color: var(--muted);
   }
-  .timers-bar {
+  .hdr-right {
     display: flex;
-    flex-wrap: wrap;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
+    flex-wrap: wrap;
   }
-  .timer-chip {
-    background: #F1F5F9;
+  .cd-chip {
+    background: var(--surface);
     border: 1px solid var(--border);
     border-radius: 8px;
-    padding: 5px 10px;
-    font-size: 11.5px;
+    padding: 4px 8px;
+    font-size: 11px;
     color: var(--sec);
   }
-  .timer-chip b { color: var(--text); }
+  .cd-chip b { color: var(--text); }
   .btn-refresh {
     border: 1px solid #BAE6FD;
     background: var(--sky-bg);
     color: #0369A1;
     border-radius: 8px;
-    padding: 6px 11px;
-    font-size: 11.5px;
+    padding: 5px 10px;
+    font-size: 11.2px;
     font-weight: 700;
     cursor: pointer;
   }
   .btn-refresh:hover { background: #E0F2FE; }
 
-  .shell {
-    max-width: 1280px;
-    margin: 0 auto;
-    padding: 16px;
+  /* Desktop Top Segmented Tabs */
+  .desktop-nav-wrap {
+    max-width: 1180px;
+    margin: 10px auto 0 auto;
     display: flex;
-    flex-direction: column;
-    gap: 16px;
+    background: var(--surface);
+    padding: 4px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    gap: 4px;
+  }
+  .d-tab-btn {
+    flex: 1;
+    border: none;
+    background: transparent;
+    color: var(--sec);
+    font-size: 12.2px;
+    font-weight: 700;
+    padding: 7px 10px;
+    border-radius: 7px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .d-tab-btn.active {
+    background: #FFFFFF;
+    color: var(--sky);
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
   }
 
-  /* KPI Grid */
-  .kpi-grid {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+  /* Mobile Fixed Bottom Tab Bar */
+  .mobile-bottom-nav {
+    display: none;
+  }
+  @media (max-width: 767px) {
+    .desktop-nav-wrap { display: none; }
+    .mobile-bottom-nav {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      z-index: 50;
+      background: rgba(255, 255, 255, 0.98);
+      backdrop-filter: blur(10px);
+      border-top: 1px solid var(--border);
+      padding: 6px 4px calc(6px + env(safe-area-inset-bottom)) 4px;
+      box-shadow: 0 -2px 10px rgba(15, 23, 42, 0.06);
+    }
+    .m-tab-btn {
+      border: none;
+      background: transparent;
+      color: var(--muted);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+      font-size: 10.5px;
+      font-weight: 700;
+      padding: 4px 2px;
+      cursor: pointer;
+    }
+    .m-tab-btn .m-ico { font-size: 16px; line-height: 1.1; }
+    .m-tab-btn.active { color: var(--sky); }
+  }
+
+  .shell {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 14px;
+  }
+  @media (max-width: 767px) {
+    .shell { padding: 12px 10px 84px 10px; }
+  }
+
+  .tab-panel { display: none; flex-direction: column; gap: 14px; }
+  .tab-panel.active { display: flex; }
+
+  /* Hero Equity Card */
+  .hero-eq-card {
+    background: linear-gradient(135deg, #FFFFFF 0%, #F8FAFC 100%);
+    border: 1px solid var(--border);
+    border-top: 4px solid var(--emerald);
+    border-radius: 14px;
+    padding: 16px;
+    box-shadow: 0 2px 6px rgba(15, 23, 42, 0.04);
+  }
+  .hero-eq-top {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: flex-start;
     gap: 12px;
   }
-  @media (max-width: 960px) {
-    .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  }
-  @media (max-width: 520px) {
-    .kpi-grid { grid-template-columns: 1fr; }
-  }
-  .kpi-card {
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-top: 3px solid var(--sky);
-    border-radius: 12px;
-    padding: 13px 15px;
-    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
-  }
-  .kpi-lbl {
+  .hero-lbl {
     font-size: 11px;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.04em;
     color: var(--muted);
   }
-  .kpi-val {
-    margin: 5px 0 3px 0;
-    font-size: 21px;
+  .hero-val {
+    font-size: 28px;
     font-weight: 800;
-    color: var(--text);
+    letter-spacing: -0.02em;
+    margin: 3px 0;
   }
-  .kpi-sub {
+  .hero-delta-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--sec);
+  }
+  .roi-pill {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 999px;
     font-size: 11.5px;
+    font-weight: 800;
+  }
+  .status-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 10px;
+  }
+  .st-chip {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 5px 9px;
+    font-size: 11.2px;
+    font-weight: 600;
     color: var(--sec);
   }
 
-  /* Cards & Tables */
+  /* S2 Step Progress Bar */
+  .step-progress-wrap {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+  }
+  .step-prog-head {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: 6px;
+    font-size: 11.5px;
+    margin-bottom: 6px;
+  }
+  .step-track {
+    width: 100%;
+    height: 9px;
+    background: #E2E8F0;
+    border-radius: 999px;
+    overflow: hidden;
+  }
+  .step-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #0284C7 0%, #059669 100%);
+    border-radius: 999px;
+    transition: width 0.35s ease;
+  }
+
+  /* Section & Card */
   .card {
     background: var(--card);
     border: 1px solid var(--border);
     border-radius: 14px;
-    padding: 16px;
+    padding: 14px;
     box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
   }
   .card-head {
@@ -188,27 +316,191 @@
     flex-wrap: wrap;
     justify-content: space-between;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
     margin-bottom: 12px;
   }
   .card-head h2 {
     margin: 0;
-    font-size: 15px;
+    font-size: 14.5px;
     font-weight: 800;
-    letter-spacing: -0.01em;
   }
   .card-head p {
     margin: 2px 0 0 0;
-    font-size: 11.8px;
+    font-size: 11.5px;
     color: var(--sec);
   }
-  .toggle-group {
-    display: inline-flex;
+
+  /* Open Position Trading Cards */
+  .pos-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+  @media (max-width: 767px) {
+    .pos-grid { grid-template-columns: 1fr; }
+  }
+  .pos-card {
+    background: #FFFFFF;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 13px;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+  }
+  .pos-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .pos-title {
+    font-size: 14px;
+    font-weight: 800;
+    color: var(--text);
+    display: flex;
+    align-items: center;
     flex-wrap: wrap;
     gap: 5px;
-    background: #F1F5F9;
-    padding: 3px;
+  }
+  .pos-pnl {
+    text-align: right;
+  }
+  .pos-pnl-usd {
+    font-size: 16px;
+    font-weight: 800;
+    display: block;
+  }
+  .pos-pnl-pct {
+    font-size: 11px;
+    font-weight: 700;
+  }
+  .pos-meta-line {
+    margin-top: 4px;
+    font-size: 11.2px;
+    color: var(--sec);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+  }
+
+  /* Visual Price Target Progress Bar (SL -> Entry -> TP1 -> TP2) */
+  .target-bar-box {
+    margin: 11px 0 9px 0;
+    background: #F8FAFC;
+    border: 1px solid var(--border);
     border-radius: 9px;
+    padding: 8px 10px;
+  }
+  .target-track {
+    position: relative;
+    height: 7px;
+    background: #E2E8F0;
+    border-radius: 999px;
+    margin: 10px 4px 12px 4px;
+  }
+  .target-fill {
+    position: absolute;
+    top: 0;
+    height: 100%;
+    border-radius: 999px;
+    transition: left 0.3s ease, width 0.3s ease;
+  }
+  .target-tick {
+    position: absolute;
+    top: -3px;
+    width: 2px;
+    height: 13px;
+    background: #94A3B8;
+  }
+  .target-dot {
+    position: absolute;
+    top: 50%;
+    width: 13px;
+    height: 13px;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    border: 2px solid #FFFFFF;
+    box-shadow: 0 1px 4px rgba(15, 23, 42, 0.35);
+    transition: left 0.35s ease;
+    z-index: 2;
+  }
+  .target-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 10.2px;
+    color: var(--sec);
+    gap: 4px;
+  }
+  .pos-levels-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px 10px;
+    font-size: 11.2px;
+    color: var(--sec);
+  }
+  @media (max-width: 520px) {
+    .pos-levels-grid { grid-template-columns: 1fr; }
+  }
+  .pos-lvl-item {
+    display: flex;
+    justify-content: space-between;
+    gap: 6px;
+    background: #F8FAFC;
+    padding: 5px 8px;
+    border-radius: 6px;
+  }
+
+  /* Badges & Shimmer */
+  .badge {
+    display: inline-block;
+    padding: 1.5px 6px;
+    border-radius: 5px;
+    font-size: 10.3px;
+    font-weight: 700;
+  }
+  .b-long { background: var(--emerald-bg); color: var(--emerald); border: 1px solid #A7F3D0; }
+  .b-short { background: var(--rose-bg); color: var(--rose); border: 1px solid #FECDD3; }
+  .b-tf { background: var(--sky-bg); color: #0369A1; border: 1px solid #BAE6FD; }
+  .b-tp1 { background: var(--amber-bg); color: #B45309; border: 1px solid #FDE68A; }
+
+  @keyframes legendary-shimmer {
+    0% { transform: translateX(-140%); }
+    45%, 100% { transform: translateX(180%); }
+  }
+  .must-badge {
+    position: relative;
+    display: inline-block;
+    overflow: hidden;
+    padding: 1.5px 6px;
+    border-radius: 5px;
+    font-size: 9.8px;
+    font-weight: 800;
+    letter-spacing: 0.2px;
+    vertical-align: middle;
+    background: linear-gradient(135deg, #F59E0B 0%, #EA580C 50%, #D97706 100%);
+    color: #FFFFFF;
+    border: 1px solid #FDE68A;
+    box-shadow: 0 2px 6px rgba(245, 158, 11, 0.35);
+  }
+  .must-badge::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 60%;
+    height: 100%;
+    background: linear-gradient(110deg, transparent 20%, rgba(255, 255, 255, 0.65) 50%, transparent 80%);
+    animation: legendary-shimmer 3.2s ease-in-out infinite;
+    pointer-events: none;
+  }
+
+  /* Tab 2: 6 Coin 1U Cards */
+  .toggle-group {
+    display: inline-flex;
+    gap: 4px;
+    background: var(--surface);
+    padding: 3px;
+    border-radius: 8px;
     border: 1px solid var(--border);
   }
   .t-btn {
@@ -226,37 +518,54 @@
     color: var(--sky);
     box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
   }
+  .rates-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+  }
+  @media (max-width: 960px) {
+    .rates-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (max-width: 580px) {
+    .rates-grid { grid-template-columns: 1fr; }
+  }
+  .rate-card {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 12px;
+    background: #FFFFFF;
+  }
+  .rate-card-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+  .rate-coin {
+    font-size: 14.5px;
+    font-weight: 800;
+  }
+  .rate-px {
+    font-size: 14.5px;
+    font-weight: 800;
+    padding: 2px 6px;
+    border-radius: 6px;
+    transition: background-color 0.25s ease;
+  }
+  .tick-up { animation: flashGreen 0.4s ease; }
+  .tick-dn { animation: flashRed 0.4s ease; }
+  @keyframes flashGreen { 0% { background: #A7F3D0; } 100% { background: transparent; } }
+  @keyframes flashRed { 0% { background: #FECDD3; } 100% { background: transparent; } }
 
-  .tbl-wrap {
-    width: 100%;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-  }
-  table.clean-tbl {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 12.2px;
-  }
-  table.clean-tbl th {
-    text-align: left;
-    padding: 8px 9px;
-    font-size: 10.8px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-    color: var(--muted);
-    background: #F8FAFC;
-    border-bottom: 1px solid var(--border);
-    white-space: nowrap;
-  }
-  table.clean-tbl td {
-    padding: 9px;
+  .rate-u-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+    padding-bottom: 8px;
     border-bottom: 1px solid #F1F5F9;
-    vertical-align: middle;
   }
-  table.clean-tbl tr:last-child td { border-bottom: none; }
   .delta-up {
-    display: inline-block;
     background: var(--emerald-bg);
     color: var(--emerald);
     border: 1px solid #A7F3D0;
@@ -266,7 +575,6 @@
     font-weight: 700;
   }
   .delta-dn {
-    display: inline-block;
     background: var(--rose-bg);
     color: var(--rose);
     border: 1px solid #FECDD3;
@@ -276,8 +584,7 @@
     font-weight: 700;
   }
   .delta-flat {
-    display: inline-block;
-    background: #F1F5F9;
+    background: var(--surface);
     color: var(--muted);
     border: 1px solid var(--border);
     border-radius: 6px;
@@ -285,68 +592,42 @@
     font-size: 11px;
     font-weight: 600;
   }
-  .badge {
-    display: inline-block;
-    padding: 2px 7px;
-    border-radius: 6px;
-    font-size: 10.8px;
-    font-weight: 700;
+  .rate-pills {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 5px;
+    font-size: 11px;
   }
-  .b-long { background: #ECFDF5; color: #059669; border: 1px solid #A7F3D0; }
-  .b-short { background: #FFF1F2; color: #DC2626; border: 1px solid #FECDD3; }
-  .b-tf { background: #F0F9FF; color: #0369A1; border: 1px solid #BAE6FD; }
-  .b-tp1 { background: #FFFBEB; color: #B45309; border: 1px solid #FDE68A; }
-  @keyframes legendary-shimmer {
-    0% { transform: translateX(-140%); }
-    45%, 100% { transform: translateX(180%); }
-  }
-  .must-badge {
-    position: relative;
-    display: inline-block;
-    overflow: hidden;
-    padding: 1px 6px;
-    border-radius: 5px;
-    font-size: 9.8px;
-    font-weight: 700;
-    letter-spacing: 0.2px;
-    margin-left: 4px;
-    vertical-align: middle;
-    background: linear-gradient(135deg, #F59E0B 0%, #EA580C 50%, #D97706 100%);
-    color: #FFFFFF;
-    border: 1px solid #FDE68A;
-    box-shadow: 0 2px 8px rgba(245, 158, 11, 0.35);
-  }
-  .must-badge::after {
-    content: "";
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 60%;
-    height: 100%;
-    background: linear-gradient(110deg, transparent 20%, rgba(255, 255, 255, 0.65) 50%, transparent 80%);
-    animation: legendary-shimmer 3.2s ease-in-out infinite;
-    pointer-events: none;
-  }
-
-  .tick-up { animation: flashGreen 0.7s ease; }
-  .tick-dn { animation: flashRed 0.7s ease; }
-  @keyframes flashGreen { 0% { background: #D1FAE5; } 100% { background: transparent; } }
-  @keyframes flashRed { 0% { background: #FFE4E6; } 100% { background: transparent; } }
-
-  .empty-box {
-    text-align: center;
-    padding: 22px 12px;
-    color: var(--muted);
+  .rate-pill {
     background: #F8FAFC;
-    border: 1px dashed #CBD5E1;
-    border-radius: 10px;
-    font-size: 12.5px;
+    border-radius: 6px;
+    padding: 4px 7px;
+    display: flex;
+    justify-content: space-between;
   }
+
+  /* Tab 3: Stats & History */
+  .mini-kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+  }
+  @media (max-width: 767px) {
+    .mini-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  .mini-kpi {
+    background: #FFFFFF;
+    border: 1px solid var(--border);
+    border-radius: 11px;
+    padding: 10px 12px;
+  }
+  .mini-kpi span { font-size: 10.5px; font-weight: 700; color: var(--muted); text-transform: uppercase; }
+  .mini-kpi strong { display: block; margin-top: 3px; font-size: 16px; font-weight: 800; }
 
   .filter-bar {
     display: flex;
     flex-wrap: wrap;
-    gap: 6px;
+    gap: 5px;
     margin-bottom: 10px;
   }
   .f-pill {
@@ -354,9 +635,9 @@
     background: #FFFFFF;
     color: var(--sec);
     border-radius: 999px;
-    padding: 4px 10px;
-    font-size: 11.2px;
-    font-weight: 600;
+    padding: 4px 9px;
+    font-size: 11px;
+    font-weight: 700;
     cursor: pointer;
   }
   .f-pill.active {
@@ -364,11 +645,66 @@
     color: #FFFFFF;
     border-color: #0F172A;
   }
-  .footer-note {
+  .hist-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .hist-item {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 12px;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    background: #FFFFFF;
+  }
+
+  /* Tab 4: Mechanism Cards */
+  .mech-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+  @media (max-width: 767px) {
+    .mech-grid { grid-template-columns: 1fr; }
+  }
+  .mech-card {
+    background: #FFFFFF;
+    border: 1px solid var(--border);
+    border-top: 3.5px solid var(--sky);
+    border-radius: 12px;
+    padding: 14px;
+  }
+  .mech-card h3 {
+    margin: 0 0 6px 0;
+    font-size: 14px;
+    font-weight: 800;
+  }
+  .mech-card p {
+    margin: 0;
+    font-size: 12.2px;
+    color: var(--sec);
+    line-height: 1.55;
+  }
+  code {
+    background: var(--surface);
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: #0F172A;
+  }
+  .empty-box {
     text-align: center;
-    font-size: 11.2px;
+    padding: 22px 12px;
     color: var(--muted);
-    padding: 4px 0 22px 0;
+    background: #F8FAFC;
+    border: 1px dashed #CBD5E1;
+    border-radius: 10px;
+    font-size: 12.2px;
   }
 </style>
 </head>
@@ -376,136 +712,197 @@
 
 <header class="topbar">
   <div class="topbar-inner">
-    <div class="brand">
-      <h1>
-        <span>CHICKTRADE v3.0</span>
-        <span class="live-pill"><span class="live-dot"></span> PAPER-TEST $10,000 LIVE</span>
-      </h1>
-      <p class="brand-sub" id="hdr-updated">Đang tải dữ liệu GitHub Pages &amp; Binance Futures...</p>
+    <div>
+      <div class="brand-row">
+        <h1 class="brand-title">CHICKTRADE v3.0</h1>
+        <span class="live-pill"><span class="live-dot"></span> LIVE · Binance</span>
+      </div>
+      <p class="brand-sub" id="hdr-updated">Đang kết nối GitHub Pages &amp; Binance Futures...</p>
     </div>
-    <div class="timers-bar">
-      <div class="timer-chip num">Nến 15m: <b id="cd-15m">--:--</b></div>
-      <div class="timer-chip num">Chu kỳ 4H (1U): <b id="cd-4h">--:--:--</b></div>
+    <div class="hdr-right">
+      <div class="cd-chip num">15m: <b id="cd-15m">--:--</b></div>
+      <div class="cd-chip num">4H (1U): <b id="cd-4h">--:--:--</b></div>
       <button type="button" class="btn-refresh" onclick="loadDashboard(true)">↻ Làm mới</button>
     </div>
   </div>
+
+  <!-- Desktop Top Segmented Bar -->
+  <nav class="desktop-nav-wrap" aria-label="Điều hướng chính">
+    <button type="button" class="d-tab-btn active" data-tab="tab-overview" onclick="switchTab('tab-overview')">💼 Tổng Quan</button>
+    <button type="button" class="d-tab-btn" data-tab="tab-rates" onclick="switchTab('tab-rates')">📏 Tỷ Lệ 4H Live</button>
+    <button type="button" class="d-tab-btn" data-tab="tab-history" onclick="switchTab('tab-history')">📜 Lịch Sử</button>
+    <button type="button" class="d-tab-btn" data-tab="tab-guide" onclick="switchTab('tab-guide')">🛡️ Cơ Chế</button>
+  </nav>
 </header>
 
 <main class="shell">
 
-  <!-- 1. KPI OVERVIEW -->
-  <section class="kpi-grid">
-    <div class="kpi-card" style="border-top-color:#059669;">
-      <div class="kpi-lbl">Tài Sản Live (Equity)</div>
-      <div class="kpi-val num" id="kpi-equity">$10,000.00</div>
-      <div class="kpi-sub num" id="kpi-equity-sub">Gốc $10,000 · PnL nổi $0.00</div>
+  <!-- TAB 1: TỔNG QUAN -->
+  <section id="tab-overview" class="tab-panel active">
+    <div class="hero-eq-card">
+      <div class="hero-eq-top">
+        <div>
+          <div class="hero-lbl">Tổng Tài Sản Live (Paper-Test $10,000)</div>
+          <div class="hero-val num" id="kpi-equity">$10,000.00</div>
+          <div class="hero-delta-row num" id="kpi-equity-sub">
+            <span class="roi-pill" style="background:#ECFDF5;color:#059669;">+0.00%</span>
+            <span>Đã chốt $10,000.00 · Nổi $0.00</span>
+          </div>
+        </div>
+        <div class="status-chips">
+          <div class="st-chip num" id="chip-mode">Bao 400G · 20×</div>
+          <div class="st-chip" id="chip-brake">Phanh 2-SL: 0/2</div>
+        </div>
+      </div>
+
+      <div class="step-progress-wrap">
+        <div class="step-prog-head num">
+          <span><strong id="kpi-step-lbl">Bậc 0 (∞)</strong> · Sizing Base: <strong id="kpi-tier-cap">$10,000</strong></span>
+          <span id="kpi-next-step" style="color:#0369A1;font-weight:700;">Mục tiêu Bậc 1 (+8%): $10,800</span>
+        </div>
+        <div class="step-track">
+          <div class="step-fill" id="step-fill-bar" style="width:0%;"></div>
+        </div>
+      </div>
     </div>
-    <div class="kpi-card" style="border-top-color:#0284C7;">
-      <div class="kpi-lbl">Bậc Lãi Kép S2 (Không Giới Hạn)</div>
-      <div class="kpi-val num" id="kpi-step">Bậc 0 (&infin;)</div>
-      <div class="kpi-sub num" id="kpi-step-sub">Sizing Base: $10,000 (Đệm -10% · Cap $300k/$150k)</div>
-    </div>
-    <div class="kpi-card" style="border-top-color:#D97706;">
-      <div class="kpi-lbl">Bao Giá · Đòn Bẩy · Phanh</div>
-      <div class="kpi-val num" id="kpi-mode">Bao 400G · 20×</div>
-      <div class="kpi-sub" id="kpi-brake">Phanh 2-SL Core: Bình thường (0/2)</div>
-    </div>
-    <div class="kpi-card" style="border-top-color:#6D28D9;">
-      <div class="kpi-lbl">Hiệu Suất &amp; Winrate</div>
-      <div class="kpi-val num" id="kpi-wr">0 lệnh · WR 0.0%</div>
-      <div class="kpi-sub num" id="kpi-stats-sub">Thắng tiền: 0.0% · PF 0.00 · MaxDD 0.00%</div>
+
+    <div class="card">
+      <div class="card-head">
+        <div>
+          <h2>⚡ Lệnh Đang Mở (<span id="open-count">0</span> / 5)</h2>
+          <p>Giá &amp; PnL nổi nhảy mỗi 5 giây theo Binance Futures · Chấm tròn chạy trực tiếp giữa SL &amp; TP1/TP2</p>
+        </div>
+      </div>
+      <div id="open-positions-container">
+        <div class="empty-box">Hiện chưa có lệnh nào đang mở. Engine quét 58 Setup mỗi 15 phút.</div>
+      </div>
     </div>
   </section>
 
-  <!-- 2. LIVE U3_HTF_MACRO_ATR RATES WITH 4H DELTA ARROWS -->
-  <section class="card">
-    <div class="card-head">
-      <div>
-        <h2>📏 Tỷ Lệ 1U / SL / TP1 / TP2 / Dời SL (%) Live — Chuẩn <code>U3_HTF_MACRO_ATR</code></h2>
-        <p id="u3-subtitle">Biến động <code>▲ / ▼</code> so với chu kỳ 4H liền trước · Giá Binance Futures cập nhật tự động mỗi 5 giây</p>
+  <!-- TAB 2: TỶ LỆ 4H LIVE -->
+  <section id="tab-rates" class="tab-panel">
+    <div class="card">
+      <div class="card-head">
+        <div>
+          <h2>📏 Tỷ Lệ <code>1U / SL / TP1 / TP2 / Dời SL (%)</code> Live</h2>
+          <p id="u3-subtitle">Biến động <code>▲ / ▼</code> so với chu kỳ 4H liền trước · Giá Binance Futures nhảy mỗi 5s</p>
+        </div>
+        <div class="toggle-group">
+          <button type="button" class="t-btn active" onclick="setRatesTf('15m', this)">15m</button>
+          <button type="button" class="t-btn" onclick="setRatesTf('30m', this)">30m</button>
+          <button type="button" class="t-btn" onclick="setRatesTf('1h', this)">1h</button>
+        </div>
       </div>
-      <div class="toggle-group">
-        <button type="button" class="t-btn active" onclick="setRatesTf('15m', this)">Khung 15m</button>
-        <button type="button" class="t-btn" onclick="setRatesTf('30m', this)">Khung 30m</button>
-        <button type="button" class="t-btn" onclick="setRatesTf('1h', this)">Khung 1h</button>
+      <div class="rates-grid" id="rates-grid">
+        <div class="empty-box">Đang tải bảng tỷ lệ 1U của 6 Coin...</div>
       </div>
-    </div>
-    <div class="tbl-wrap">
-      <table class="clean-tbl">
-        <thead>
-          <tr>
-            <th>Coin</th>
-            <th>Giá Live (5s)</th>
-            <th>1U Hiện Tại (%)</th>
-            <th>Biến Động vs 4H Trước</th>
-            <th>SL (%)</th>
-            <th>TP1 (%)</th>
-            <th>TP2 (%)</th>
-            <th>Dời SL (-1U %)</th>
-          </tr>
-        </thead>
-        <tbody id="tbl-u3-rates">
-          <tr><td colspan="8" style="text-align:center;color:#64748B;">Đang tải bảng 1U...</td></tr>
-        </tbody>
-      </table>
     </div>
   </section>
 
-  <!-- 3. OPEN POSITIONS (REALTIME PRICE & PNL) -->
-  <section class="card">
-    <div class="card-head">
-      <div>
-        <h2>⚡ Lệnh Đang Mở (<span id="open-count">0</span> / 5)</h2>
-        <p>PnL nổi cập nhật trực tiếp mỗi 5 giây theo giá Mark/Last Binance Futures · Quản trị SL/TP1/TP2 theo nến đóng</p>
+  <!-- TAB 3: LỊCH SỬ -->
+  <section id="tab-history" class="tab-panel">
+    <div class="mini-kpi-grid">
+      <div class="mini-kpi">
+        <span>Tổng Lệnh Đóng</span>
+        <strong class="num" id="st-total">0</strong>
+      </div>
+      <div class="mini-kpi">
+        <span>Thắng Tiền (Profit WR)</span>
+        <strong class="num" id="st-pwr" style="color:#059669;">0.0%</strong>
+      </div>
+      <div class="mini-kpi">
+        <span>Winrate Lệnh</span>
+        <strong class="num" id="st-wr">0.0%</strong>
+      </div>
+      <div class="mini-kpi">
+        <span>PF / MaxDD</span>
+        <strong class="num" id="st-pf-dd">0.00 / 0.00%</strong>
       </div>
     </div>
-    <div id="open-positions-container">
-      <div class="empty-box">Hiện chưa có lệnh nào đang mở. Engine quét 58 Setup mỗi 15 phút.</div>
+
+    <div class="card">
+      <div class="card-head">
+        <div>
+          <h2>📈 Đường Cong Tài Sản ($10,000)</h2>
+          <p>Ghi nhận sau mỗi lệnh đóng (đã trừ phí sàn 0.02%/0.05% + trượt giá 0.01%)</p>
+        </div>
+      </div>
+      <div id="chart-equity" style="width:100%;height:260px;"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <div>
+          <h2>📜 Danh Sách Lệnh Đã Đóng (<span id="closed-count">0</span>)</h2>
+          <p>Bấm lọc nhanh theo kết quả Thắng/Thua hoặc từng Coin</p>
+        </div>
+      </div>
+      <div class="filter-bar">
+        <button type="button" class="f-pill out-pill active" onclick="setHistOutcome('ALL', this)">Tất cả KQ</button>
+        <button type="button" class="f-pill out-pill" onclick="setHistOutcome('WIN', this)">Chỉ Thắng</button>
+        <button type="button" class="f-pill out-pill" onclick="setHistOutcome('LOSS', this)">Chỉ Thua</button>
+        <span style="width:6px;"></span>
+        <button type="button" class="f-pill coin-pill active" onclick="setHistCoin('ALL', this)">6 Coin</button>
+        <button type="button" class="f-pill coin-pill" onclick="setHistCoin('BTCUSDT', this)">BTC</button>
+        <button type="button" class="f-pill coin-pill" onclick="setHistCoin('ETHUSDT', this)">ETH</button>
+        <button type="button" class="f-pill coin-pill" onclick="setHistCoin('BNBUSDT', this)">BNB</button>
+        <button type="button" class="f-pill coin-pill" onclick="setHistCoin('LINKUSDT', this)">LINK</button>
+        <button type="button" class="f-pill coin-pill" onclick="setHistCoin('XRPUSDT', this)">XRP</button>
+        <button type="button" class="f-pill coin-pill" onclick="setHistCoin('SOLUSDT', this)">SOL</button>
+      </div>
+      <div id="closed-trades-container">
+        <div class="empty-box">Chưa có lệnh nào đóng trong phiên Paper-Test này.</div>
+      </div>
     </div>
   </section>
 
-  <!-- 4. EQUITY CURVE CHART -->
-  <section class="card">
-    <div class="card-head">
-      <div>
-        <h2>📈 Đường Cong Tài Sản Paper-Test ($10,000)</h2>
-        <p>Cập nhật theo mỗi lệnh đóng thực tế (đã trừ phí sàn 0.02%/0.05% + trượt giá 0.01%)</p>
+  <!-- TAB 4: CƠ CHẾ -->
+  <section id="tab-guide" class="tab-panel">
+    <div class="mech-grid">
+      <div class="mech-card" style="border-top-color:#0284C7;">
+        <h3>1. Thước Đo <code>U3_HTF_MACRO_ATR</code> (Co Giãn 4H)</h3>
+        <p>
+          Thay vì dùng ATR 14 nến ngắn hạn dễ nhiễu râu, <code>1U</code> được neo mượt theo <code>EMA20</code> của biến động khung <strong>4H</strong> đã đóng nhân hệ số khung (<code>15m: 0.29</code> · <code>30m: 0.41</code> · <code>1h: 0.59</code>, sàn <code>0.08%</code>). Nhờ vậy <code>SL / TP1 / TP2</code> tự co giãn theo mùa sóng của từng coin.
+        </p>
+      </div>
+      <div class="mech-card" style="border-top-color:#059669;">
+        <h3>2. Lãi Kép <code>S2</code> Không Giới Hạn Bậc</h3>
+        <p>
+          Mỗi khi vốn tăng <code>+8%</code>, hệ thống tự nâng 1 bậc lãi kép (không giới hạn số bậc tối đa) và <strong>giữ cố định volume</strong> trong suốt bậc đó — chỉ hạ 1 bậc nếu tài sản tụt quá <code>-10%</code> dưới mốc bậc, kết hợp trần thanh khoản thực tế <code>$300k</code> BTC/ETH &amp; <code>$150k</code> Altcoin.
+        </p>
+      </div>
+      <div class="mech-card" style="border-top-color:#D97706;">
+        <h3>3. <code>Bao 400G</code> / <code>Auto-Turbo 250G</code> &amp; Phanh <code>2-SL</code></h3>
+        <p>
+          Mặc định vận hành an toàn ở <strong>Bao 400 giá</strong> (<code>20× Cross</code>, tối đa 5 lệnh / 1 lệnh mỗi coin). Khi bật Auto-Turbo, hễ Equity &ge; <code>$12,500</code> bot sang số <strong>250G</strong> và khóa cứng sàn <code>$11,000</code>. Nếu dính <strong>2 lệnh SL gốc Core</strong> liên tiếp, phanh <code>Shadow-Win</code> tự dừng tiền thật đợi 1 lệnh thắng nháp.
+        </p>
+      </div>
+      <div class="mech-card" style="border-top-color:#6D28D9;">
+        <h3>4. Chuẩn Khớp Live <code>LIMIT IOC ±0.25U</code></h3>
+        <p>
+          Đóng nến 58 Setup xác nhận → đặt lệnh <code>LIMIT IOC</code> với biên trượt tối đa <code>0.25U</code> (vượt <code>0.25U</code> tự hủy, không đuổi giá). <code>SL / TP1 / TP2</code> neo theo giá tín hiệu cấu trúc <code>P_sig</code>; <code>Dời SL (0U / BE+Phí)</code> neo theo giá khớp thực tế cộng phí 2 chiều.
+        </p>
       </div>
     </div>
-    <div id="chart-equity" style="width:100%;height:280px;"></div>
   </section>
-
-  <!-- 5. CLOSED TRADES HISTORY -->
-  <section class="card">
-    <div class="card-head">
-      <div>
-        <h2>📜 Lịch Sử Lệnh Đã Đóng (<span id="closed-count">0</span>)</h2>
-        <p>Lọc nhanh theo đồng Coin hoặc kết quả Thắng / Thua</p>
-      </div>
-    </div>
-    <div class="filter-bar">
-      <button type="button" class="f-pill active" onclick="setHistCoin('ALL', this)">Tất cả Coin</button>
-      <button type="button" class="f-pill" onclick="setHistCoin('BTCUSDT', this)">BTC</button>
-      <button type="button" class="f-pill" onclick="setHistCoin('ETHUSDT', this)">ETH</button>
-      <button type="button" class="f-pill" onclick="setHistCoin('BNBUSDT', this)">BNB</button>
-      <button type="button" class="f-pill" onclick="setHistCoin('LINKUSDT', this)">LINK</button>
-      <button type="button" class="f-pill" onclick="setHistCoin('XRPUSDT', this)">XRP</button>
-      <button type="button" class="f-pill" onclick="setHistCoin('SOLUSDT', this)">SOL</button>
-      <span style="width:8px;"></span>
-      <button type="button" class="f-pill active" onclick="setHistOutcome('ALL', this)">Tất cả KQ</button>
-      <button type="button" class="f-pill" onclick="setHistOutcome('WIN', this)">Chỉ Thắng</button>
-      <button type="button" class="f-pill" onclick="setHistOutcome('LOSS', this)">Chỉ Thua</button>
-    </div>
-    <div id="closed-trades-container">
-      <div class="empty-box">Chưa có lệnh đóng trong phiên Paper-Test này.</div>
-    </div>
-  </section>
-
-  <footer class="footer-note">
-    CHICKTRADE v3.0 &middot; U3_HTF_MACRO_ATR (58 Setups) &middot; S2 Không Giới Hạn Bậc + Trần $300k/$150k &middot; Vận hành $0/tháng trên GitHub Actions + Pages
-  </footer>
 
 </main>
+
+<!-- Mobile Fixed Bottom Tab Bar -->
+<nav class="mobile-bottom-nav" aria-label="Điều hướng di động">
+  <button type="button" class="m-tab-btn active" data-tab="tab-overview" onclick="switchTab('tab-overview')">
+    <span class="m-ico">💼</span><span>Tổng Quan</span>
+  </button>
+  <button type="button" class="m-tab-btn" data-tab="tab-rates" onclick="switchTab('tab-rates')">
+    <span class="m-ico">📏</span><span>Tỷ Lệ 4H</span>
+  </button>
+  <button type="button" class="m-tab-btn" data-tab="tab-history" onclick="switchTab('tab-history')">
+    <span class="m-ico">📜</span><span>Lịch Sử</span>
+  </button>
+  <button type="button" class="m-tab-btn" data-tab="tab-guide" onclick="switchTab('tab-guide')">
+    <span class="m-ico">🛡️</span><span>Cơ Chế</span>
+  </button>
+</nav>
 
 <script>
   try {
@@ -522,6 +919,21 @@
   let selectedRatesTf = '15m';
   let histCoinFilter = 'ALL';
   let histOutcomeFilter = 'ALL';
+  let activeTabId = 'tab-overview';
+
+  function switchTab(tabId) {
+    activeTabId = tabId;
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === tabId));
+    document.querySelectorAll('.d-tab-btn, .m-tab-btn').forEach(b => {
+      b.classList.toggle('active', b.getAttribute('data-tab') === tabId);
+    });
+    if (tabId === 'tab-history') {
+      setTimeout(() => {
+        renderEquityChart();
+        try { Plotly.Plots.resize('chart-equity'); } catch (e) {}
+      }, 40);
+    }
+  }
 
   function fmtPx(px) {
     const v = Number(px);
@@ -539,25 +951,31 @@
     return (n >= 0 ? '+' : '-') + absStr;
   }
 
+  function shortSetupCode(code) {
+    const s = String(code || '');
+    const parts = s.split('_');
+    const ema = parts[0] || s;
+    const wPart = parts.find(p => p.startsWith('W') && p.length >= 2);
+    return wPart ? `${ema}C${wPart[1]}` : s;
+  }
+
   function setRatesTf(tf, btn) {
     selectedRatesTf = tf;
     btn.parentElement.querySelectorAll('.t-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
-    renderRatesTable();
+    renderRatesCards();
   }
 
   function setHistCoin(coin, btn) {
     histCoinFilter = coin;
-    const pills = btn.parentElement.querySelectorAll('.f-pill');
-    for (let i = 0; i < 7; i++) pills[i].classList.remove('active');
+    document.querySelectorAll('.coin-pill').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     renderClosedTrades();
   }
 
   function setHistOutcome(out, btn) {
     histOutcomeFilter = out;
-    const pills = btn.parentElement.querySelectorAll('.f-pill');
-    for (let i = 7; i < pills.length; i++) pills[i].classList.remove('active');
+    document.querySelectorAll('.out-pill').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     renderClosedTrades();
   }
@@ -574,43 +992,187 @@
     return total;
   }
 
-  function renderKpis() {
+  function renderOverviewHero() {
     if (!dashData) return;
     const acc = dashData.account || {};
     const st = dashData.stats || {};
-    const realizedEq = Number(acc.equity || 10000);
+    const initCap = Number(acc.initial_capital || 10000);
+    const realizedEq = Number(acc.equity || initCap);
     const unr = computeLiveUnrealized();
     const liveEq = realizedEq + unr;
-    const initCap = Number(acc.initial_capital || 10000);
+    const pnlTotal = liveEq - initCap;
     const liveRoi = ((liveEq / initCap) - 1) * 100;
 
     const eqEl = document.getElementById('kpi-equity');
     eqEl.textContent = fmtUsd(liveEq);
     eqEl.style.color = liveEq >= initCap ? '#059669' : '#DC2626';
-    document.getElementById('kpi-equity-sub').innerHTML =
-      `ROI <b style="color:${liveRoi >= 0 ? '#059669' : '#DC2626'}">${liveRoi >= 0 ? '+' : ''}${liveRoi.toFixed(2)}%</b> · Đã chốt ${fmtUsd(realizedEq)} · Nổi <b style="color:${unr >= 0 ? '#059669' : '#DC2626'}">${fmtUsd(unr, true)}</b>`;
 
-    document.getElementById('kpi-step').textContent = `Bậc ${acc.step || 0} (∞)`;
-    document.getElementById('kpi-step-sub').textContent = `Sizing Base: ${fmtUsd(acc.tier_capital || 10000)} (Đệm -10% · Cap $300k/$150k)`;
+    const roiBg = liveRoi >= 0 ? '#ECFDF5' : '#FFF1F2';
+    const roiCol = liveRoi >= 0 ? '#059669' : '#DC2626';
+    document.getElementById('kpi-equity-sub').innerHTML =
+      `<span class="roi-pill" style="background:${roiBg};color:${roiCol};">${liveRoi >= 0 ? '+' : ''}${liveRoi.toFixed(2)}% (${fmtUsd(pnlTotal, true)})</span>` +
+      `<span>Đã chốt ${fmtUsd(realizedEq)} · Nổi <b style="color:${unr >= 0 ? '#059669' : '#DC2626'}">${fmtUsd(unr, true)}</b></span>`;
 
     const bufLabel = acc.turbo_active ? 'Turbo 250G ⚡' : `Bao ${acc.buffer_units || 400}G`;
-    document.getElementById('kpi-mode').textContent = `${bufLabel} · ${acc.leverage || 20}×`;
-    const brakeEl = document.getElementById('kpi-brake');
+    document.getElementById('chip-mode').textContent = `${bufLabel} · ${acc.leverage || 20}× Cross`;
+    const brakeEl = document.getElementById('chip-brake');
     if (acc.shadow_paused) {
-      brakeEl.innerHTML = `<span style="color:#DC2626;font-weight:700;">🛑 ĐANG PHANH SHADOW-WIN (Đợi 1 thắng nháp)</span>`;
+      brakeEl.innerHTML = `<span style="color:#DC2626;font-weight:700;">🛑 Phanh Shadow-Win</span>`;
     } else {
-      brakeEl.textContent = `Phanh 2-SL Core: Bình thường (${acc.portfolio_consec_sl || 0}/2 SL)`;
+      brakeEl.textContent = `Phanh 2-SL: ${acc.portfolio_consec_sl || 0}/2`;
     }
 
-    document.getElementById('kpi-wr').textContent = `${st.total_trades || 0} lệnh · WR ${Number(st.wr_pct || 0).toFixed(1)}%`;
-    document.getElementById('kpi-stats-sub').textContent =
-      `Thắng tiền: ${Number(st.profit_wr_pct || 0).toFixed(1)}% · PF ${Number(st.pf || 0).toFixed(2)} · MaxDD ${Number(acc.max_dd_pct || 0).toFixed(2)}%`;
+    // S2 Step Progress Bar (+8% to next step, -10% down floor)
+    const step = Number(acc.step || 0);
+    const curBase = Number(acc.tier_capital || (initCap * Math.pow(1.08, step)));
+    const nextTarget = initCap * Math.pow(1.08, step + 1);
+    const downFloor = curBase * 0.90;
+    const progPct = step === 0
+      ? Math.max(0, Math.min(100, ((liveEq - initCap) / (nextTarget - initCap)) * 100))
+      : Math.max(0, Math.min(100, ((liveEq - downFloor) / (nextTarget - downFloor)) * 100));
+
+    document.getElementById('kpi-step-lbl').textContent = `Bậc ${step} (∞)`;
+    document.getElementById('kpi-tier-cap').textContent = fmtUsd(curBase);
+    document.getElementById('kpi-next-step').textContent = `Lên Bậc ${step + 1} (+8%): ${fmtUsd(nextTarget)}`;
+    document.getElementById('step-fill-bar').style.width = `${progPct.toFixed(1)}%`;
+
+    // Tab 3 summary mini-KPIs
+    document.getElementById('st-total').textContent = st.total_trades || 0;
+    document.getElementById('st-pwr').textContent = `${Number(st.profit_wr_pct || 0).toFixed(1)}%`;
+    document.getElementById('st-wr').textContent = `${Number(st.wr_pct || 0).toFixed(1)}%`;
+    document.getElementById('st-pf-dd').textContent = `${Number(st.pf || 0).toFixed(2)} / ${Number(acc.max_dd_pct || 0).toFixed(2)}%`;
   }
 
-  function renderRatesTable() {
+  function calcTargetProgressPos(p, curPx) {
+    // Map SL=0%, Entry=35%, TP1=68%, TP2=100% smoothly along directional progress
+    const d = p.direction === 'LONG' ? 1 : -1;
+    const sl = Number(p.active_sl_price);
+    const en = Number(p.entry_price);
+    const tp1 = Number(p.tp1_price);
+    const tp2 = Number(p.tp2_price);
+    const cur = Number(curPx);
+
+    const distSl = Math.max(1e-9, d * (en - sl));
+    const distTp1 = Math.max(1e-9, d * (tp1 - en));
+    const distTp2 = Math.max(1e-9, d * (tp2 - tp1));
+    const rel = d * (cur - en);
+
+    let pct = 35;
+    if (rel < 0) {
+      pct = 35 * Math.max(0, 1 + rel / distSl);
+    } else if (rel <= distTp1) {
+      pct = 35 + 33 * (rel / distTp1);
+    } else {
+      pct = 68 + 32 * Math.min(1, (rel - distTp1) / distTp2);
+    }
+    return Math.max(2, Math.min(98, pct));
+  }
+
+  function renderOpenPositions() {
+    if (!dashData) return;
+    const list = dashData.open_positions || [];
+    document.getElementById('open-count').textContent = list.length;
+    const container = document.getElementById('open-positions-container');
+    if (list.length === 0) {
+      container.innerHTML = `<div class="empty-box">Hiện chưa có lệnh nào đang mở. GitHub Actions quét 58 Setup mỗi 15 phút.</div>`;
+      return;
+    }
+
+    const cards = list.map(p => {
+      const curPx = liveTickers[p.symbol] || p.current_price || p.entry_price;
+      const d = p.direction === 'LONG' ? 1 : -1;
+      const remQty = Number(p.qty) * (p.tp1_hit ? 0.5 : 1.0);
+      const unrUsd = d * (curPx - Number(p.entry_price)) * remQty;
+      const totLivePnl = Number(p.realized_pnl_usd || 0) + unrUsd;
+      const unrPct = d * (curPx - Number(p.entry_price)) / Number(p.entry_price) * 100;
+      const pnlCol = totLivePnl >= 0 ? '#059669' : '#DC2626';
+      const dirBadge = p.direction === 'LONG' ? '<span class="badge b-long">LONG</span>' : '<span class="badge b-short">SHORT</span>';
+      const tp1Tag = p.tp1_hit ? '<span class="badge b-tp1">TP1 ✓ Đã dời SL</span>' : '';
+      const mustBadge = p.is_must_order ? '<span class="must-badge">THẤY LÀ QUẤT</span>' : '';
+      const shortCode = shortSetupCode(p.setup_code);
+      const liveWr = p.setup_live_wr_pct !== undefined ? p.setup_live_wr_pct : p.wr_pct;
+      const livePwr = p.setup_live_profit_wr_pct !== undefined ? p.setup_live_profit_wr_pct : p.profit_wr_pct;
+      const totSamples = p.setup_total_samples ? ` (${p.setup_total_samples} lệnh)` : '';
+      const pwrTxt = livePwr !== undefined
+        ? `<span>WR (3Y+Live): <b>${Number(liveWr || 0).toFixed(1)}%</b> · Thắng tiền: <b style="color:#059669;">${Number(livePwr).toFixed(1)}%</b>${totSamples}</span>`
+        : '';
+
+      const expTp1 = Number(p.expected_tp1_usd || 0);
+      const expTp2 = Number(p.expected_tp2_usd || 0);
+      const expSl = Number(p.expected_sl_usd || -Number(p.worst_sl_usd || 0));
+      const expSlPct = Number(p.expected_sl_eq_pct || 0);
+      const isSingleTarget = (p.exit_arch === 'ONLY_TP1' || p.exit_arch === 'ONLY_1R');
+      const winLabel = isSingleTarget
+        ? `<span>Dự kiến Win (${p.exit_arch === 'ONLY_1R' ? '1R' : 'TP1'})</span><strong style="color:#059669;">${fmtUsd(expTp1, true)}</strong>`
+        : (p.tp1_hit
+            ? `<span>TP1 ✓ · Đạt TP2</span><strong style="color:#059669;">${fmtUsd(expTp2, true)}</strong>`
+            : `<span>Dự kiến Win (TP1/TP2)</span><strong style="color:#059669;">${fmtUsd(expTp1, true)} / ${fmtUsd(expTp2, true)}</strong>`);
+      const lossLabel = p.tp1_hit
+        ? `<span>Rủi ro SL chân 2</span><strong style="color:${expSl >= 0 ? '#059669' : '#DC2626'};">${fmtUsd(expSl, true)}</strong>`
+        : `<span>Dự kiến Thua (SL)</span><strong style="color:#DC2626;">${fmtUsd(expSl, true)} (${expSlPct.toFixed(2)}%)</strong>`;
+
+      const dotPct = calcTargetProgressPos(p, curPx);
+      const isProfit = dotPct >= 35;
+      const fillLeft = isProfit ? 35 : dotPct;
+      const fillWidth = Math.abs(dotPct - 35);
+      const fillCol = isProfit ? '#059669' : '#DC2626';
+
+      return `
+        <div class="pos-card">
+          <div class="pos-top">
+            <div>
+              <div class="pos-title">
+                <span>${p.symbol.replace('USDT', '')}</span>
+                <span class="badge b-tf">${p.tf}</span>
+                <code style="font-weight:700;">${shortCode}</code>
+                ${dirBadge}
+                ${mustBadge}
+                ${tp1Tag}
+              </div>
+              <div class="pos-meta-line num">
+                ${pwrTxt}
+              </div>
+              <div class="pos-meta-line num" style="color:#64748B;">
+                <span>Qty: <b>${p.qty}</b> (${p.vol_mult}×) · ~$${Number(p.notional_usd || 0).toLocaleString()} @ 20×</span>
+              </div>
+            </div>
+            <div class="pos-pnl num">
+              <span class="pos-pnl-usd" style="color:${pnlCol};">${fmtUsd(totLivePnl, true)}</span>
+              <span class="pos-pnl-pct" style="color:${pnlCol};">${unrPct >= 0 ? '+' : ''}${unrPct.toFixed(2)}%</span>
+            </div>
+          </div>
+
+          <div class="target-bar-box">
+            <div class="target-track">
+              <div class="target-tick" style="left:35%;background:#64748B;" title="Entry"></div>
+              <div class="target-tick" style="left:68%;background:#D97706;" title="TP1"></div>
+              <div class="target-fill" style="left:${fillLeft}%;width:${fillWidth}%;background:${fillCol};"></div>
+              <div class="target-dot" style="left:${dotPct}%;background:${fillCol};"></div>
+            </div>
+            <div class="target-labels num">
+              <span style="color:#DC2626;">SL ${fmtPx(p.active_sl_price)}</span>
+              <span style="color:#475569;">Vào ${fmtPx(p.entry_price)}</span>
+              <span style="color:#B45309;">TP1 ${fmtPx(p.tp1_price)}</span>
+              <span style="color:#059669;">TP2 ${fmtPx(p.tp2_price)}</span>
+            </div>
+          </div>
+
+          <div class="pos-levels-grid num">
+            <div class="pos-lvl-item">${winLabel}</div>
+            <div class="pos-lvl-item">${lossLabel}</div>
+            <div class="pos-lvl-item"><span>Giá Live (5s)</span><strong style="color:#0369A1;">${fmtPx(curPx)}</strong></div>
+            <div class="pos-lvl-item"><span>Chế độ Bao</span><strong>${p.buffer_used || 400}G · SL cấu trúc</strong></div>
+          </div>
+        </div>
+      `;
+    });
+
+    container.innerHTML = `<div class="pos-grid">${cards.join('')}</div>`;
+  }
+
+  function renderRatesCards() {
     if (!dashData || !Array.isArray(dashData.live_u3_rates)) return;
-    const rows = [];
-    for (const r of dashData.live_u3_rates) {
+    const cards = dashData.live_u3_rates.map(r => {
       const sym = r.coin;
       const d = (r.tf_details && r.tf_details[selectedRatesTf]) ? r.tf_details[selectedRatesTf] : {};
       const px = liveTickers[sym] || r.price;
@@ -627,76 +1189,38 @@
         deltaHtml = `<span class="delta-dn num">▼ ${delta.toFixed(4)}%</span>`;
       }
 
-      rows.push(`
-        <tr>
-          <td><strong>${sym.replace('USDT', '')}</strong><span style="color:#64748B;font-size:11px;">/USDT</span></td>
-          <td class="num ${flashCls}"><strong>${fmtPx(px)}</strong></td>
-          <td class="num"><strong style="color:#0369A1;">${uPct.toFixed(4)}%</strong> <span style="color:#64748B;font-size:11px;">(${fmtPx(uUsdPx)})</span></td>
-          <td>${deltaHtml}</td>
-          <td class="num" style="color:#DC2626;font-weight:700;">${Number(d.sl_pct || 0).toFixed(2)}%</td>
-          <td class="num" style="color:#059669;font-weight:700;">${Number(d.tp1_pct || 0).toFixed(2)}%</td>
-          <td class="num" style="color:#15803D;font-weight:800;">${Number(d.tp2_pct || 0).toFixed(2)}%</td>
-          <td class="num" style="color:#475569;">${Number(d.doi_sl_1u_pct || 0).toFixed(3)}%</td>
-        </tr>
-      `);
-    }
-    document.getElementById('tbl-u3-rates').innerHTML = rows.join('');
+      return `
+        <div class="rate-card">
+          <div class="rate-card-head">
+            <span class="rate-coin">${sym.replace('USDT', '')}<span style="color:#64748B;font-size:11px;">/USDT</span></span>
+            <span class="rate-px num ${flashCls}">${fmtPx(px)}</span>
+          </div>
+          <div class="rate-u-row">
+            <div>
+              <small style="color:#64748B;display:block;font-size:10.5px;">1U (${selectedRatesTf})</small>
+              <strong class="num" style="color:#0369A1;font-size:13.5px;">${uPct.toFixed(4)}%</strong>
+              <small class="num" style="color:#64748B;"> (${fmtPx(uUsdPx)})</small>
+            </div>
+            <div style="text-align:right;">
+              <small style="color:#64748B;display:block;font-size:10.5px;margin-bottom:2px;">So với 4H trước</small>
+              ${deltaHtml}
+            </div>
+          </div>
+          <div class="rate-pills num">
+            <div class="rate-pill"><span>SL (${r.sl_u}U)</span><strong style="color:#DC2626;">${Number(d.sl_pct || 0).toFixed(2)}%</strong></div>
+            <div class="rate-pill"><span>TP1 (${d.tp1_u || 3.5}U)</span><strong style="color:#059669;">${Number(d.tp1_pct || 0).toFixed(2)}%</strong></div>
+            <div class="rate-pill"><span>TP2 (${r.tp2_u}U)</span><strong style="color:#15803D;">${Number(d.tp2_pct || 0).toFixed(2)}%</strong></div>
+            <div class="rate-pill"><span>Dời SL (-1U)</span><strong style="color:#475569;">${Number(d.doi_sl_1u_pct || 0).toFixed(3)}%</strong></div>
+          </div>
+        </div>
+      `;
+    });
+
+    document.getElementById('rates-grid').innerHTML = cards.join('');
     if (dashData.live_u3_rates[0]) {
       document.getElementById('u3-subtitle').innerHTML =
         `Nến 4H đóng gần nhất: <code>${dashData.live_u3_rates[0].h4_closed_utc} UTC</code> · Mũi tên <code>▲ / ▼</code> so với chu kỳ 4H trước · Giá Live nhảy mỗi 5s`;
     }
-  }
-
-  function renderOpenPositions() {
-    if (!dashData) return;
-    const list = dashData.open_positions || [];
-    document.getElementById('open-count').textContent = list.length;
-    const container = document.getElementById('open-positions-container');
-    if (list.length === 0) {
-      container.innerHTML = `<div class="empty-box">Hiện chưa có lệnh nào đang mở. GitHub Actions quét 58 Setup mỗi 15 phút.</div>`;
-      return;
-    }
-
-    const rows = list.map(p => {
-      const curPx = liveTickers[p.symbol] || p.current_price || p.entry_price;
-      const d = p.direction === 'LONG' ? 1 : -1;
-      const remQty = Number(p.qty) * (p.tp1_hit ? 0.5 : 1.0);
-      const unrUsd = d * (curPx - Number(p.entry_price)) * remQty;
-      const totLivePnl = Number(p.realized_pnl_usd || 0) + unrUsd;
-      const unrPct = d * (curPx - Number(p.entry_price)) / Number(p.entry_price) * 100;
-      const pnlCol = totLivePnl >= 0 ? '#059669' : '#DC2626';
-      const dirBadge = p.direction === 'LONG' ? '<span class="badge b-long">LONG</span>' : '<span class="badge b-short">SHORT</span>';
-      const tp1Tag = p.tp1_hit ? ' <span class="badge b-tp1">TP1 ✓ Đã dời SL</span>' : '';
-      const mustBadge = p.is_must_order ? ' <span class="must-badge">THẤY LÀ QUẤT</span>' : '';
-      const pwrStr = p.profit_wr_pct !== undefined ? `Thắng tiền <b style="color:#059669;">${Number(p.profit_wr_pct).toFixed(1)}%</b> · WR <b>${Number(p.wr_pct || 0).toFixed(1)}%</b>` : '';
-
-      return `
-        <tr>
-          <td><strong>${p.symbol}</strong> <span class="badge b-tf">${p.tf}</span><br><small style="color:#475569;">${p.setup_code} ${dirBadge}${mustBadge}${tp1Tag}</small>${pwrStr ? `<br><small class="num" style="color:#64748B;">${pwrStr}</small>` : ''}</td>
-          <td class="num">Vào: <b>${fmtPx(p.entry_price)}</b><br>Live: <b style="color:#0369A1;">${fmtPx(curPx)}</b></td>
-          <td class="num" style="color:${pnlCol};font-weight:800;">${fmtUsd(totLivePnl, true)}<br><small>(${unrPct >= 0 ? '+' : ''}${unrPct.toFixed(2)}%)</small></td>
-          <td class="num">SL: <b style="color:#DC2626;">${fmtPx(p.active_sl_price)}</b><br>TP1: <b>${fmtPx(p.tp1_price)}</b> · TP2: <b style="color:#059669;">${fmtPx(p.tp2_price)}</b></td>
-          <td class="num">Qty: <b>${p.qty}</b> (${p.vol_mult}×)<br><small style="color:#64748B;">~$${Number(p.notional_usd || 0).toLocaleString()} @ 20×</small></td>
-        </tr>
-      `;
-    });
-
-    container.innerHTML = `
-      <div class="tbl-wrap">
-        <table class="clean-tbl">
-          <thead>
-            <tr>
-              <th>Lệnh &amp; Setup</th>
-              <th>Entry / Giá Live</th>
-              <th>PnL Live ($ &amp; %)</th>
-              <th>Mốc SL / TP1 / TP2</th>
-              <th>Khối Lượng (20×)</th>
-            </tr>
-          </thead>
-          <tbody>${rows.join('')}</tbody>
-        </table>
-      </div>
-    `;
   }
 
   function renderEquityChart() {
@@ -716,8 +1240,8 @@
     }], {
       paper_bgcolor: '#FFFFFF',
       plot_bgcolor: '#F8FAFC',
-      margin: { t: 16, r: 16, l: 58, b: 36 },
-      font: { family: 'Inter, sans-serif', size: 11.5, color: '#475569' },
+      margin: { t: 14, r: 14, l: 56, b: 34 },
+      font: { family: 'Inter, sans-serif', size: 11, color: '#475569' },
       xaxis: { gridcolor: '#E2E8F0' },
       yaxis: { gridcolor: '#E2E8F0', tickprefix: '$' }
     }, { responsive: true, displayModeBar: false });
@@ -739,39 +1263,40 @@
       return;
     }
 
-    const rows = filtered.slice(0, 100).map(t => {
+    const items = filtered.slice(0, 100).map(t => {
       const win = Number(t.pnl_usd) > 0;
       const pnlCol = win ? '#059669' : '#DC2626';
       const dirBadge = t.direction === 'LONG' ? '<span class="badge b-long">LONG</span>' : '<span class="badge b-short">SHORT</span>';
-      const mustBadge = t.is_must_order ? ' <span class="must-badge">THẤY LÀ QUẤT</span>' : '';
-      const pwrStr = t.profit_wr_pct !== undefined ? `Thắng tiền <b style="color:#059669;">${Number(t.profit_wr_pct).toFixed(1)}%</b> · WR <b>${Number(t.wr_pct || 0).toFixed(1)}%</b>` : '';
+      const mustBadge = t.is_must_order ? '<span class="must-badge">THẤY LÀ QUẤT</span>' : '';
+      const shortCode = shortSetupCode(t.setup_code);
+      const pwrStr = t.profit_wr_pct !== undefined
+        ? `Thắng tiền <b style="color:#059669;">${Number(t.profit_wr_pct).toFixed(1)}%</b> · WR <b>${Number(t.wr_pct || 0).toFixed(1)}%</b>`
+        : '';
+
       return `
-        <tr>
-          <td><strong>${t.symbol}</strong> <span class="badge b-tf">${t.tf}</span><br><small style="color:#475569;">${t.setup_code} ${dirBadge}${mustBadge}</small>${pwrStr ? `<br><small class="num" style="color:#64748B;">${pwrStr}</small>` : ''}</td>
-          <td class="num">${fmtPx(t.entry_price)} &rarr; <b>${fmtPx(t.exit_price)}</b></td>
-          <td><b>${t.outcome}</b><br><small class="num" style="color:#64748B;">${t.closed_utc}</small></td>
-          <td class="num" style="color:${pnlCol};font-weight:800;">${fmtUsd(t.pnl_usd, true)}</td>
-          <td class="num">${t.qty} <small style="color:#64748B;">(${t.vol_mult}×)</small></td>
-        </tr>
+        <div class="hist-item">
+          <div>
+            <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;">
+              <strong>${t.symbol.replace('USDT', '')}</strong>
+              <span class="badge b-tf">${t.tf}</span>
+              <code>${shortCode}</code>
+              ${dirBadge}
+              ${mustBadge}
+            </div>
+            <div class="num" style="font-size:11px;color:#64748B;margin-top:3px;">
+              ${fmtPx(t.entry_price)} &rarr; <b>${fmtPx(t.exit_price)}</b> · ${t.outcome} · ${t.closed_utc}
+              ${pwrStr ? ` · ${pwrStr}` : ''}
+            </div>
+          </div>
+          <div class="num" style="text-align:right;">
+            <strong style="color:${pnlCol};font-size:14.5px;">${fmtUsd(t.pnl_usd, true)}</strong>
+            <div style="font-size:10.8px;color:#64748B;">${t.qty} (${t.vol_mult}×)</div>
+          </div>
+        </div>
       `;
     });
 
-    container.innerHTML = `
-      <div class="tbl-wrap">
-        <table class="clean-tbl">
-          <thead>
-            <tr>
-              <th>Lệnh</th>
-              <th>Entry &rarr; Exit</th>
-              <th>Kết Quả &amp; Giờ Đóng</th>
-              <th>PnL Thực Nhận</th>
-              <th>Qty / Vol</th>
-            </tr>
-          </thead>
-          <tbody>${rows.join('')}</tbody>
-        </table>
-      </div>
-    `;
+    container.innerHTML = `<div class="hist-list">${items.join('')}</div>`;
   }
 
   async function pollBinancePrices() {
@@ -785,9 +1310,9 @@
           liveTickers[item.symbol] = parseFloat(item.price);
         }
       }
-      renderKpis();
-      renderRatesTable();
+      renderOverviewHero();
       renderOpenPositions();
+      renderRatesCards();
     } catch (e) {}
   }
 
@@ -796,15 +1321,15 @@
       const resp = await fetch(`data/live_dashboard.json?t=${Date.now()}`, { cache: 'no-store' });
       dashData = await resp.json();
       document.getElementById('hdr-updated').innerHTML =
-        `Cập nhật gần nhất: <code>${dashData.updated_at_utc}</code> &middot; 58 Setup <code>U3_HTF_MACRO_ATR</code>`;
-      renderKpis();
-      renderRatesTable();
+        `Cập nhật: <code>${dashData.updated_at_utc}</code> · 58 Setup <code>U3 4H</code>`;
+      renderOverviewHero();
       renderOpenPositions();
-      renderEquityChart();
+      renderRatesCards();
       renderClosedTrades();
+      if (activeTabId === 'tab-history') renderEquityChart();
       if (alsoPollPrice) pollBinancePrices();
     } catch (err) {
-      document.getElementById('hdr-updated').textContent = 'Chưa tải được live_dashboard.json (kiểm tra GitHub Pages).';
+      document.getElementById('hdr-updated').textContent = 'Chưa tải được live_dashboard.json.';
     }
   }
 

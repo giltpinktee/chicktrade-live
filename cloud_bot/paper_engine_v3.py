@@ -502,21 +502,125 @@ def compute_top_must_keys(rules_list: List[dict], top_n: int = 15) -> set:
     return {(r["coin"], r["tf"], r["setup_code"]) for r in ranked[:top_n]}
 
 
+def compute_setup_live_stats(
+    rules_map: Dict[Tuple[str, str, str], dict],
+    closed_trades: List[dict],
+) -> Dict[Tuple[str, str, str], dict]:
+    """Compute real-time setup WR & Profit WR from 3Y prior + CLOSED trades ONLY (never open positions)."""
+    acc_map: Dict[Tuple[str, str, str], dict] = {}
+    for k, r in rules_map.items():
+        p = r.get("prior_1y", {})
+        base_n = int(p.get("trades", 0))
+        base_wins = int(p.get("wins", 0))
+        pwr = float(p.get("profit_wr_pct", 50.0)) / 100.0
+        net_u = float(p.get("net_u", 0.0))
+        if abs(2.0 * pwr - 1.0) > 0.002 and net_u != 0.0:
+            tot_u = abs(net_u / (2.0 * pwr - 1.0))
+            gp_u = pwr * tot_u
+            gl_u = (1.0 - pwr) * tot_u
+        else:
+            avg_w = float(p.get("avg_win_u", 0.0))
+            avg_l = float(p.get("avg_loss_u", 0.0))
+            gp_u = avg_w * base_wins
+            gl_u = avg_l * max(0, base_n - base_wins)
+        acc_map[k] = {"n": base_n, "wins": base_wins, "gp_u": gp_u, "gl_u": gl_u}
+
+    for tr in closed_trades:
+        k = (tr.get("symbol"), tr.get("tf"), tr.get("setup_code"))
+        if k not in acc_map:
+            continue
+        rec = acc_map[k]
+        rec["n"] += 1
+        pnl_usd = float(tr.get("pnl_usd", 0.0))
+        if pnl_usd > 0:
+            rec["wins"] += 1
+        if "pnl_u" in tr and tr["pnl_u"] is not None:
+            pnl_u = float(tr["pnl_u"])
+        else:
+            u_px = float(tr.get("u_price", 0.0))
+            qty = float(tr.get("qty", 0.0))
+            pnl_u = pnl_usd / (u_px * qty) if (u_px > 0 and qty > 0) else (pnl_usd / max(25.0 * float(tr.get("vol_mult", 1.0)), 1.0))
+        if pnl_u > 0:
+            rec["gp_u"] += pnl_u
+        else:
+            rec["gl_u"] += abs(pnl_u)
+
+    out: Dict[Tuple[str, str, str], dict] = {}
+    for k, rec in acc_map.items():
+        n = rec["n"]
+        tot_u = rec["gp_u"] + rec["gl_u"]
+        out[k] = {
+            "total_samples": n,
+            "live_wr_pct": round(rec["wins"] / n * 100.0, 1) if n > 0 else 0.0,
+            "live_profit_wr_pct": round(rec["gp_u"] / tot_u * 100.0, 1) if tot_u > 1e-6 else 0.0,
+        }
+    return out
+
+
+def compute_expected_pnl_fields(pos: dict, equity: float) -> None:
+    """Compute exact fee-adjusted expected Win (TP1 / TP2) & Loss (SL) USD for an open position."""
+    entry = float(pos["entry_price"])
+    qty = float(pos["qty"])
+    d = 1 if pos["direction"] == "LONG" else -1
+    arch = pos.get("exit_arch", "PARTIAL_MOVE_SL")
+    sl_px = float(pos["sl_price"])
+    active_sl_px = float(pos["active_sl_price"])
+    tp1_px = float(pos["tp1_price"])
+    tp2_px = float(pos["tp2_price"])
+    r1_px = float(pos.get("r1_price", tp1_px))
+
+    if arch in ("ONLY_TP1", "ONLY_1R"):
+        tgt = tp1_px if arch == "ONLY_TP1" else r1_px
+        exp_tp1 = _calc_leg_pnl(entry, tgt, qty, d, exit_maker=True)
+        exp_tp2 = exp_tp1
+    else:
+        leg1_tp1 = float(pos["realized_pnl_usd"]) if pos.get("tp1_hit") else _calc_leg_pnl(entry, tp1_px, qty * 0.5, d, exit_maker=True)
+        leg2_tp2 = _calc_leg_pnl(entry, tp2_px, qty * 0.5, d, exit_maker=True)
+        exp_tp1 = leg1_tp1
+        exp_tp2 = leg1_tp1 + leg2_tp2
+
+    if pos.get("tp1_hit"):
+        exp_sl = float(pos.get("realized_pnl_usd", 0.0)) + _calc_leg_pnl(entry, active_sl_px, qty * 0.5, d, exit_maker=False)
+    else:
+        exp_sl = _calc_leg_pnl(entry, sl_px, qty, d, exit_maker=False)
+
+    pos["expected_tp1_usd"] = round(float(exp_tp1), 2)
+    pos["expected_tp2_usd"] = round(float(exp_tp2), 2)
+    pos["expected_sl_usd"] = round(float(exp_sl), 2)
+    pos["expected_sl_eq_pct"] = round((float(exp_sl) / max(float(equity), 1.0)) * 100.0, 2)
+
+
 def enrich_positions_metadata(
     state: dict,
     rules_map: Dict[Tuple[str, str, str], dict],
     top_must_keys: set,
 ) -> None:
-    """Backfill profit_wr_pct, wr_pct, and is_must_order on existing open & closed records."""
-    for group_key in ("open_positions", "closed_trades"):
-        for item in state.get(group_key, []):
-            k = (item.get("symbol"), item.get("tf"), item.get("setup_code"))
-            r = rules_map.get(k)
-            if r is not None:
-                p = r.get("prior_1y", {})
-                item["profit_wr_pct"] = round(float(p.get("profit_wr_pct", 0.0)), 1)
-                item["wr_pct"] = round(float(p.get("wr_pct", 0.0)), 1)
-                item["is_must_order"] = bool(k in top_must_keys)
+    """Update live setup WR/Profit WR (3Y prior + CLOSED ONLY), is_must_order, & expected PnL on open positions."""
+    live_setup_stats = compute_setup_live_stats(rules_map, state.get("closed_trades", []))
+    equity = float(state["account"]["equity"])
+
+    for pos in state.get("open_positions", []):
+        k = (pos.get("symbol"), pos.get("tf"), pos.get("setup_code"))
+        st = live_setup_stats.get(k)
+        if st is not None:
+            pos["setup_live_wr_pct"] = st["live_wr_pct"]
+            pos["setup_live_profit_wr_pct"] = st["live_profit_wr_pct"]
+            pos["setup_total_samples"] = st["total_samples"]
+            pos["wr_pct"] = st["live_wr_pct"]
+            pos["profit_wr_pct"] = st["live_profit_wr_pct"]
+        pos["is_must_order"] = bool(k in top_must_keys)
+        compute_expected_pnl_fields(pos, equity)
+
+    for tr in state.get("closed_trades", []):
+        k = (tr.get("symbol"), tr.get("tf"), tr.get("setup_code"))
+        st = live_setup_stats.get(k)
+        if st is not None:
+            tr["setup_live_wr_pct"] = st["live_wr_pct"]
+            tr["setup_live_profit_wr_pct"] = st["live_profit_wr_pct"]
+            tr["setup_total_samples"] = st["total_samples"]
+            tr.setdefault("wr_pct", st["live_wr_pct"])
+            tr.setdefault("profit_wr_pct", st["live_profit_wr_pct"])
+        tr["is_must_order"] = bool(k in top_must_keys)
 
 
 def load_or_init_state(turbo_enabled: bool) -> dict:
@@ -662,6 +766,9 @@ def update_open_positions(
         stats["profit_wr_pct"] = round(gp / max(gp + gl, 0.01) * 100.0, 2)
         stats["pf"] = round(gp / max(gl, 0.01), 2) if gl > 0.01 else (99.99 if gp > 0 else 0.0)
 
+        u_px = float(pos.get("u_price", 0.0))
+        qty_f = float(pos["qty"])
+        pnl_u = round(tot_pnl / (u_px * qty_f), 4) if (u_px > 0 and qty_f > 0) else 0.0
         closed_rec = {
             "id": pos["id"],
             "symbol": sym,
@@ -671,12 +778,14 @@ def update_open_positions(
             "entry_price": pos["entry_price"],
             "exit_price": round(close_px, 6),
             "qty": pos["qty"],
+            "u_price": u_px,
             "vol_mult": pos["vol_mult"],
             "profit_wr_pct": pos.get("profit_wr_pct", 0.0),
             "wr_pct": pos.get("wr_pct", 0.0),
             "is_must_order": bool(pos.get("is_must_order", False)),
             "outcome": closed_outcome,
             "pnl_usd": tot_pnl,
+            "pnl_u": pnl_u,
             "opened_utc": pos["opened_utc"],
             "closed_utc": close_ts_str,
         }
@@ -856,7 +965,6 @@ def main():
     now_ms = int(now_dt.timestamp() * 1000)
 
     state = load_or_init_state(turbo_enabled)
-    enrich_positions_metadata(state, rules_map, top_must_keys)
     filters = fetch_exchange_filters()
     closed_data, live_prices = fetch_all_market_data(now_ms)
     rates_rows, u_price_map = compute_u3_rates(closed_data, live_prices, unit_cfg)
@@ -865,6 +973,7 @@ def main():
     update_open_positions(state, closed_data, live_prices, events)
     signals = detect_latest_signals(closed_data, rules_map)
     open_new_positions(state, signals, u_price_map, filters, now_ms, events, top_must_keys=top_must_keys)
+    enrich_positions_metadata(state, rules_map, top_must_keys)
 
     acc = state["account"]
     acc["roi_pct"] = round((float(acc["equity"]) / float(acc["initial_capital"]) - 1.0) * 100.0, 2)
