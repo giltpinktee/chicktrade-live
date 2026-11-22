@@ -48,7 +48,15 @@ function doPost(e) {
       return ContentService.createTextOutput(JSON.stringify(res)).setMimeType(ContentService.MimeType.JSON);
     }
 
-    // 2. Standard Telegram Bot Webhook update
+    // 2. Standard Telegram Bot Webhook update (deduplicate update_id to block GAS 302 retry spam!)
+    if (payload.update_id !== undefined && payload.update_id !== null) {
+      const cache = CacheService.getScriptCache();
+      const dedupKey = 'tg_upd_' + String(payload.update_id);
+      if (cache.get(dedupKey)) {
+        return ContentService.createTextOutput('OK');
+      }
+      cache.put(dedupKey, '1', 21600); // 6 hours TTL
+    }
     if (payload.message && payload.message.text) {
       handleMessage_(payload.message);
     } else if (payload.callback_query) {
