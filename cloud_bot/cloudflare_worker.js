@@ -818,20 +818,50 @@ async function sendChartCoinPicker(cfg, chatId) {
 }
 
 async function fetchKlines220(sym, tf) {
-  const urls = [
-    `https://fapi.binance.com/fapi/v1/klines?symbol=${encodeURIComponent(sym)}&interval=${encodeURIComponent(tf)}&limit=220`,
+  const hdrs = { 'User-Agent': 'Mozilla/5.0 (compatible; CHICKTRADE/3.3)' };
+  // 1. Binance Vision (global CDN) & Binance Futures
+  const binanceUrls = [
     `https://data-api.binance.vision/api/v3/klines?symbol=${encodeURIComponent(sym)}&interval=${encodeURIComponent(tf)}&limit=220`,
+    `https://fapi.binance.com/fapi/v1/klines?symbol=${encodeURIComponent(sym)}&interval=${encodeURIComponent(tf)}&limit=220`,
   ];
-  for (const u of urls) {
+  for (const u of binanceUrls) {
     try {
-      const res = await fetch(u);
+      const res = await fetch(u, { headers: hdrs });
       if (res.ok) {
         const arr = await res.json();
-        if (Array.isArray(arr) && arr.length > 0) return arr;
+        if (Array.isArray(arr) && arr.length >= 20) return arr;
       }
     } catch {}
   }
-  throw new Error(`Không tải được dữ liệu nến Binance cho ${sym} ${tf}`);
+
+  // 2. OKX Public Perpetual Swap API (never geo-blocked on Cloudflare US/EU/Asia POPs)
+  try {
+    const base = sym.replace(/USDT$/i, '');
+    const okxBar = { '15m': '15m', '30m': '30m', '1h': '1H', '4h': '4H' }[tf] || '1H';
+    const okxUrl = `https://www.okx.com/api/v5/market/candles?instId=${encodeURIComponent(base)}-USDT-SWAP&bar=${encodeURIComponent(okxBar)}&limit=220`;
+    const res = await fetch(okxUrl, { headers: hdrs });
+    if (res.ok) {
+      const j = await res.json();
+      if (j && Array.isArray(j.data) && j.data.length >= 20) {
+        return j.data.slice().reverse().map(c => [Number(c[0]), c[1], c[2], c[3], c[4]]);
+      }
+    }
+  } catch {}
+
+  // 3. Gate.io Public Futures API fallback
+  try {
+    const base = sym.replace(/USDT$/i, '');
+    const gateUrl = `https://api.gateio.ws/api/v4/futures/usdt/candlesticks?contract=${encodeURIComponent(base)}_USDT&interval=${encodeURIComponent(tf)}&limit=220`;
+    const res = await fetch(gateUrl, { headers: hdrs });
+    if (res.ok) {
+      const arr = await res.json();
+      if (Array.isArray(arr) && arr.length >= 20) {
+        return arr.map(c => [Number(c.t) * 1000, String(c.o), String(c.h), String(c.l), String(c.c)]);
+      }
+    }
+  } catch {}
+
+  throw new Error(`Không tải được dữ liệu nến cho ${sym} ${tf} (Binance/OKX/Gate)`);
 }
 
 function computeEmaArr(closes, period) {
