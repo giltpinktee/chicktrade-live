@@ -28,6 +28,9 @@ function getConfig(env) {
     DASHBOARD_JSON_URL: String(
       e.DASHBOARD_JSON_URL || 'https://giltpinktee.github.io/chicktrade-live/data/live_dashboard.json'
     ).trim(),
+    CHART_CANDLES_JSON_URL: String(
+      e.CHART_CANDLES_JSON_URL || 'https://giltpinktee.github.io/chicktrade-live/data/chart_candles.json'
+    ).trim(),
     WEBAPP_URL: String(e.WEBAPP_URL || 'https://giltpinktee.github.io/chicktrade-live/').trim(),
     KV: e.CHICKTRADE_KV || null,
   };
@@ -871,6 +874,17 @@ async function sendChartCoinPicker(cfg, chatId) {
   );
 }
 
+async function fetchSelfHostedCandles(cfg, sym, tf) {
+  try {
+    const res = await fetch(`${cfg.CHART_CANDLES_JSON_URL}?t=${Date.now()}`);
+    if (!res.ok) return null;
+    const j = await res.json();
+    const rows = j && j.candles && j.candles[sym] ? j.candles[sym][tf] : null;
+    if (Array.isArray(rows) && rows.length >= 20) return rows;
+  } catch {}
+  return null;
+}
+
 async function fetchKlines220(sym, tf) {
   const hdrs = { 'User-Agent': 'curl/8.4.0', Accept: 'application/json' };
   const base = sym.replace(/USDT$/i, '').toUpperCase();
@@ -970,15 +984,50 @@ function pad2(n) {
 
 async function sendChartPhotoWithAutoDelete(cfg, ctx, chatId, pickerMsgId, sym, tf) {
   try {
-    await editMessageText(cfg, chatId, pickerMsgId, `⏳ Đang tải 220 nến &amp; vẽ biểu đồ <b>${sym} (${tf})</b>...`);
-    const raw = await fetchKlines220(sym, tf);
-    const closes = raw.map(k => parseFloat(k[4]));
-    const e34All = computeEmaArr(closes, 34);
-    const e89All = computeEmaArr(closes, 89);
-    const e200All = computeEmaArr(closes, 200);
+    await editMessageText(cfg, chatId, pickerMsgId, `⏳ Đang tải nến &amp; vẽ biểu đồ <b>${sym} (${tf})</b>...`);
 
-    const nShow = Math.min(60, raw.length);
-    const startIdx = raw.length - nShow;
+    // Priority #1: self-hosted chart_candles.json (0.1s, 0 rate limit / 0 451, engine-exact EMAs)
+    const [selfRows, dashData] = await Promise.all([
+      fetchSelfHostedCandles(cfg, sym, tf),
+      fetchDashboard(cfg).catch(() => null),
+    ]);
+
+    let bars = [];
+    if (selfRows) {
+      const tail = selfRows.slice(-60);
+      bars = tail.map(r => ({
+        tSec: Number(r[0]),
+        o: Number(r[1]),
+        h: Number(r[2]),
+        l: Number(r[3]),
+        c: Number(r[4]),
+        e34: Number(r[5]),
+        e89: Number(r[6]),
+        e200: Number(r[7]),
+      }));
+    } else {
+      const raw = await fetchKlines220(sym, tf);
+      const closes = raw.map(k => parseFloat(k[4]));
+      const e34All = computeEmaArr(closes, 34);
+      const e89All = computeEmaArr(closes, 89);
+      const e200All = computeEmaArr(closes, 200);
+      const startIdx = Math.max(0, raw.length - 60);
+      for (let i = startIdx; i < raw.length; i++) {
+        const k = raw[i];
+        bars.push({
+          tSec: Math.floor(Number(k[0]) / 1000),
+          o: parseFloat(k[1]),
+          h: parseFloat(k[2]),
+          l: parseFloat(k[3]),
+          c: parseFloat(k[4]),
+          e34: Number(e34All[i].toFixed(6)),
+          e89: Number(e89All[i].toFixed(6)),
+          e200: Number(e200All[i].toFixed(6)),
+        });
+      }
+    }
+
+    const nShow = bars.length;
     const labels = [];
     const wicks = [];
     const bodies = [];
@@ -989,110 +1038,145 @@ async function sendChartPhotoWithAutoDelete(cfg, ctx, chatId, pickerMsgId, sym, 
 
     let yMin = Infinity;
     let yMax = -Infinity;
-    for (let i = startIdx; i < raw.length; i++) {
-      const k = raw[i];
-      const h = parseFloat(k[2]);
-      const l = parseFloat(k[3]);
-      yMin = Math.min(yMin, l, e34All[i], e89All[i], e200All[i]);
-      yMax = Math.max(yMax, h, e34All[i], e89All[i], e200All[i]);
+    for (const b of bars) {
+      yMin = Math.min(yMin, b.l, b.e34, b.e89, b.e200);
+      yMax = Math.max(yMax, b.h, b.e34, b.e89, b.e200);
     }
+
+    const openList = dashData && Array.isArray(dashData.open_positions) ? dashData.open_positions : [];
+    const pos = openList.find(p => p.symbol === sym && p.tf === tf) || openList.find(p => p.symbol === sym) || null;
+    let entryIdx = -1;
+    if (pos && nShow > 0) {
+      const tfSec = { '15m': 900, '30m': 1800, '1h': 3600, '4h': 14400 }[tf] || 3600;
+      let rawEntrySec = Number(pos.entry_bar_ts || 0);
+      if (!isFinite(rawEntrySec) || rawEntrySec <= 0) {
+        const ms = Date.parse(String(pos.opened_utc || '').replace(' ', 'T') + ':00Z');
+        if (isFinite(ms)) rawEntrySec = Math.floor(ms / 1000);
+      }
+      const alignedEntrySec = rawEntrySec > 0 ? Math.floor(rawEntrySec / tfSec) * tfSec : 0;
+      if (alignedEntrySec >= bars[0].tSec && alignedEntrySec <= bars[nShow - 1].tSec) {
+        for (let i = 0; i < nShow; i++) {
+          if (bars[i].tSec === alignedEntrySec || (bars[i].tSec <= alignedEntrySec && (i === nShow - 1 || bars[i + 1].tSec > alignedEntrySec))) {
+            entryIdx = i;
+            break;
+          }
+        }
+      }
+      if (entryIdx >= 0) {
+        yMin = Math.min(yMin, Number(pos.entry_price));
+        yMax = Math.max(yMax, Number(pos.entry_price));
+      }
+    }
+
     const padRange = Math.max((yMax - yMin) * 0.05, yMax * 0.001);
     const minBody = Math.max((yMax - yMin) * 0.0025, yMax * 0.00015);
 
-    for (let i = startIdx; i < raw.length; i++) {
-      const k = raw[i];
-      const dtVn = new Date(Number(k[0]) + 7 * 3600 * 1000);
+    for (let i = 0; i < nShow; i++) {
+      const b = bars[i];
+      const dtVn = new Date((b.tSec + 7 * 3600) * 1000);
       const lbl =
         tf === '4h'
           ? `${pad2(dtVn.getUTCDate())}/${pad2(dtVn.getUTCMonth() + 1)} ${pad2(dtVn.getUTCHours())}h`
           : `${pad2(dtVn.getUTCHours())}:${pad2(dtVn.getUTCMinutes())}`;
-      const o = parseFloat(k[1]);
-      const h = parseFloat(k[2]);
-      const l = parseFloat(k[3]);
-      const c = parseFloat(k[4]);
-      const isUp = c >= o;
+      const isUp = b.c >= b.o;
       labels.push(lbl);
-      wicks.push([l, h]);
-      if (Math.abs(c - o) < minBody) {
-        bodies.push([o - minBody * 0.5, o + minBody * 0.5]);
+      wicks.push([b.l, b.h]);
+      if (Math.abs(b.c - b.o) < minBody) {
+        bodies.push([b.o - minBody * 0.5, b.o + minBody * 0.5]);
       } else {
-        bodies.push([Math.min(o, c), Math.max(o, c)]);
+        bodies.push([Math.min(b.o, b.c), Math.max(b.o, b.c)]);
       }
-      colors.push(isUp ? '#059669' : '#DC2626');
-      e34Show.push(Number(e34All[i].toFixed(6)));
-      e89Show.push(Number(e89All[i].toFixed(6)));
-      e200Show.push(Number(e200All[i].toFixed(6)));
+      colors.push(i === entryIdx ? '#2563EB' : isUp ? '#059669' : '#DC2626');
+      e34Show.push(b.e34);
+      e89Show.push(b.e89);
+      e200Show.push(b.e200);
     }
 
-    const lastPx = closes[closes.length - 1];
-    const lastE34 = e34All[e34All.length - 1];
-    const lastE89 = e89All[e89All.length - 1];
-    const lastE200 = e200All[e200All.length - 1];
+    const lastBar = bars[nShow - 1];
+    const lastPx = lastBar.c;
+    const lastE34 = lastBar.e34;
+    const lastE89 = lastBar.e89;
+    const lastE200 = lastBar.e200;
+
+    const datasets = [
+      {
+        type: 'line',
+        label: 'EMA 34',
+        data: e34Show,
+        borderColor: '#0284C7',
+        borderWidth: 2,
+        pointRadius: 0,
+        fill: false,
+        tension: 0.15,
+        order: 1,
+      },
+      {
+        type: 'line',
+        label: 'EMA 89',
+        data: e89Show,
+        borderColor: '#D97706',
+        borderWidth: 2,
+        pointRadius: 0,
+        fill: false,
+        tension: 0.15,
+        order: 1,
+      },
+      {
+        type: 'line',
+        label: 'EMA 200',
+        data: e200Show,
+        borderColor: '#7C3AED',
+        borderWidth: 2.2,
+        pointRadius: 0,
+        fill: false,
+        tension: 0.15,
+        order: 1,
+      },
+      {
+        type: 'bar',
+        label: 'Wick',
+        data: wicks,
+        backgroundColor: colors,
+        barThickness: 2,
+        grouped: false,
+        order: 2,
+      },
+      {
+        type: 'bar',
+        label: 'Candle',
+        data: bodies,
+        backgroundColor: colors,
+        barPercentage: 0.72,
+        categoryPercentage: 0.88,
+        grouped: false,
+        order: 3,
+      },
+    ];
+
+    if (entryIdx >= 0 && pos) {
+      const entryDotData = Array(nShow).fill(null);
+      entryDotData[entryIdx] = Number(pos.entry_price);
+      datasets.push({
+        type: 'line',
+        label: 'Entry Point',
+        data: entryDotData,
+        showLine: false,
+        pointRadius: 7,
+        pointBackgroundColor: '#10B981',
+        pointBorderColor: '#FFFFFF',
+        pointBorderWidth: 2,
+        order: 0,
+      });
+    }
 
     const chartCfg = {
       type: 'bar',
-      data: {
-        labels,
-        datasets: [
-          {
-            type: 'line',
-            label: 'EMA 34',
-            data: e34Show,
-            borderColor: '#0284C7',
-            borderWidth: 2,
-            pointRadius: 0,
-            fill: false,
-            tension: 0.15,
-            order: 1,
-          },
-          {
-            type: 'line',
-            label: 'EMA 89',
-            data: e89Show,
-            borderColor: '#D97706',
-            borderWidth: 2,
-            pointRadius: 0,
-            fill: false,
-            tension: 0.15,
-            order: 1,
-          },
-          {
-            type: 'line',
-            label: 'EMA 200',
-            data: e200Show,
-            borderColor: '#7C3AED',
-            borderWidth: 2.2,
-            pointRadius: 0,
-            fill: false,
-            tension: 0.15,
-            order: 1,
-          },
-          {
-            type: 'bar',
-            label: 'Wick',
-            data: wicks,
-            backgroundColor: colors,
-            barThickness: 2,
-            grouped: false,
-            order: 2,
-          },
-          {
-            type: 'bar',
-            label: 'Candle',
-            data: bodies,
-            backgroundColor: colors,
-            barPercentage: 0.72,
-            categoryPercentage: 0.88,
-            grouped: false,
-            order: 3,
-          },
-        ],
-      },
+      data: { labels, datasets },
       options: {
         plugins: {
           title: {
             display: true,
-            text: `${sym} · ${tf.toUpperCase()} (60 nến gần nhất · EMA 34/89/200)`,
+            text: `${sym} · ${tf.toUpperCase()} (${nShow} nến gần nhất · EMA 34/89/200)`,
             color: '#0F172A',
             font: { size: 14, weight: 'bold' },
           },
@@ -1100,7 +1184,7 @@ async function sendChartPhotoWithAutoDelete(cfg, ctx, chatId, pickerMsgId, sym, 
             display: true,
             labels: {
               color: '#334155',
-              filter: item => item.text.startsWith('EMA'),
+              filter: item => item.text.startsWith('EMA') || item.text === 'Entry Point',
             },
           },
         },

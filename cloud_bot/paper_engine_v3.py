@@ -25,6 +25,7 @@ CLOUD_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(CLOUD_DIR)
 RULES_PATH = os.path.join(ROOT, "core", "core_strategy_rules.json")
 OUT_JSON = os.path.join(ROOT, "docs", "data", "live_dashboard.json")
+OUT_CHART_JSON = os.path.join(ROOT, "docs", "data", "chart_candles.json")
 
 SIX_COINS = ["BTCUSDT", "ETHUSDT", "BNBUSDT", "LINKUSDT", "XRPUSDT", "SOLUSDT"]
 FAPI_BASES = [
@@ -680,12 +681,60 @@ def compute_expected_pnl_fields(pos: dict, equity: float) -> None:
     pos["expected_sl_eq_pct"] = round((float(exp_sl) / max(float(equity), 1.0)) * 100.0, 2)
 
 
+def _compute_entry_bar_ts(pos: dict) -> int:
+    if pos.get("entry_bar_ts"):
+        return int(pos["entry_bar_ts"])
+    tf_sec = TF_MS.get(str(pos.get("tf", "1h")), 3_600_000) // 1000
+    try:
+        opened_str = str(pos.get("opened_utc", ""))[:16]
+        dt = datetime.strptime(opened_str, "%Y-%m-%d %H:%M").replace(tzinfo=timezone.utc)
+        return (int(dt.timestamp()) // tf_sec) * tf_sec
+    except Exception:
+        return 0
+
+
+def build_chart_candles_payload(
+    closed_data: Dict[str, Dict[str, pd.DataFrame]],
+    updated_at_utc: str,
+    tail_n: int = 80,
+) -> dict:
+    """Export last 80 strictly closed candles + engine-exact EMA 34/89/200 for all 6 coins x 4 TFs."""
+    candles_out: Dict[str, Dict[str, List[List[float]]]] = {}
+    for sym in SIX_COINS:
+        candles_out[sym] = {}
+        for tf in ("15m", "30m", "1h", "4h"):
+            df = closed_data.get(sym, {}).get(tf)
+            if df is None or len(df) == 0:
+                candles_out[sym][tf] = []
+                continue
+            closes = df["close"].astype(float)
+            e34 = closes.ewm(span=34, adjust=False).mean()
+            e89 = closes.ewm(span=89, adjust=False).mean()
+            e200 = closes.ewm(span=200, adjust=False).mean()
+            sub = df.iloc[-tail_n:]
+            rows: List[List[float]] = []
+            for idx, row in sub.iterrows():
+                t_sec = int(row["open_time_ms"]) // 1000
+                rows.append([
+                    t_sec,
+                    round(float(row["open"]), 6),
+                    round(float(row["high"]), 6),
+                    round(float(row["low"]), 6),
+                    round(float(row["close"]), 6),
+                    round(float(e34.loc[idx]), 6),
+                    round(float(e89.loc[idx]), 6),
+                    round(float(e200.loc[idx]), 6),
+                ])
+            candles_out[sym][tf] = rows
+    return {"updated_at_utc": updated_at_utc, "candles": candles_out}
+
+
 def enrich_positions_metadata(
     state: dict,
     rules_map: Dict[Tuple[str, str, str], dict],
     top_must_keys: set,
 ) -> None:
-    """Update live setup WR/Profit WR (3Y prior + CLOSED ONLY), is_must_order, & expected PnL on open positions."""
+    """Update live setup WR/Profit WR (3Y prior + CLOSED ONLY), is_must_order, entry_bar_ts & expected PnL."""
     live_setup_stats = compute_setup_live_stats(rules_map, state.get("closed_trades", []))
     equity = float(state["account"]["equity"])
 
@@ -699,6 +748,7 @@ def enrich_positions_metadata(
             pos["wr_pct"] = st["live_wr_pct"]
             pos["profit_wr_pct"] = st["live_profit_wr_pct"]
         pos["is_must_order"] = bool(k in top_must_keys)
+        pos["entry_bar_ts"] = _compute_entry_bar_ts(pos)
         compute_expected_pnl_fields(pos, equity)
 
     for tr in state.get("closed_trades", []):
@@ -1224,6 +1274,7 @@ def open_new_positions(
             "worst_sl_usd": worst_sl_usd,
             "bars_held": 0,
             "opened_utc": sig["signal_utc"],
+            "entry_bar_ts": int(sig["signal_ts_ms"]) // 1000,
             "last_checked_close_ms": sig["signal_close_ms"],
         }
         compute_expected_pnl_fields(pos_obj, float(acc["equity"]))
@@ -1431,6 +1482,10 @@ def main():
     os.makedirs(os.path.dirname(OUT_JSON), exist_ok=True)
     with open(OUT_JSON, "w", encoding="utf-8") as f:
         json.dump(state, f, ensure_ascii=False, indent=2)
+
+    chart_payload = build_chart_candles_payload(closed_data, state["updated_at_utc"], tail_n=80)
+    with open(OUT_CHART_JSON, "w", encoding="utf-8") as f:
+        json.dump(chart_payload, f, separators=(",", ":"), ensure_ascii=False)
 
     print(
         f"[OK] {state['updated_at_utc']} | Equity=${acc['equity']:,.2f} (Step {acc['step']} Unlimited) | "

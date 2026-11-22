@@ -1078,6 +1078,7 @@
   let tvEma200Series = null;
   let chartPriceLines = [];
   let chartLeftLevels = [];
+  let chartEntryMarker = null;
   let chartCandleCount = 0;
   let leftTagRaf = 0;
   let chartLastCandle = null;
@@ -1595,6 +1596,15 @@
         `<div class="tv-left-tag" style="top:${y.toFixed(1)}px;background:${lvl.bg};">${lvl.label} ${fmtPx(lvl.price)}</div>`
       );
     }
+    if (chartEntryMarker && tvChart) {
+      const ex = tvChart.timeScale().timeToCoordinate(chartEntryMarker.time);
+      const ey = tvCandleSeries.priceToCoordinate(chartEntryMarker.price);
+      if (ex !== null && ey !== null && isFinite(ex) && isFinite(ey) && ey >= 4 && ey <= maxY - 4) {
+        html.push(
+          `<div title="Entry ${fmtPx(chartEntryMarker.price)}" style="position:absolute;left:${ex.toFixed(1)}px;top:${ey.toFixed(1)}px;width:10px;height:10px;border-radius:50%;background:#10B981;border:2px solid #FFFFFF;transform:translate(-50%,-50%);box-shadow:0 1px 4px rgba(15,23,42,0.35);"></div>`
+        );
+      }
+    }
     box.innerHTML = html.join('');
   }
 
@@ -1640,6 +1650,27 @@
     switchTab('tab-chart');
   }
 
+  function findChartOpenPosition() {
+    if (!dashData || !Array.isArray(dashData.open_positions)) return null;
+    return (
+      dashData.open_positions.find(p => p.symbol === chartCoin && p.tf === chartTf) ||
+      dashData.open_positions.find(p => p.symbol === chartCoin) ||
+      null
+    );
+  }
+
+  function getChartEntryBarTime(pos) {
+    if (!pos) return null;
+    const tfSec = { '15m': 900, '30m': 1800, '1h': 3600, '4h': 14400 }[chartTf] || 3600;
+    let rawSec = Number(pos.entry_bar_ts || 0);
+    if (!isFinite(rawSec) || rawSec <= 0) {
+      const ms = Date.parse(String(pos.opened_utc || '').replace(' ', 'T') + ':00Z');
+      if (!isFinite(ms)) return null;
+      rawSec = Math.floor(ms / 1000);
+    }
+    return Math.floor(rawSec / tfSec) * tfSec + 7 * 3600;
+  }
+
   function syncChartPositionLines() {
     if (!tvCandleSeries) return;
     for (const pl of chartPriceLines) {
@@ -1648,9 +1679,7 @@
     chartPriceLines = [];
     chartLeftLevels = [];
     const banner = document.getElementById('chart-pos-banner');
-    const pos = (dashData && Array.isArray(dashData.open_positions))
-      ? dashData.open_positions.find(p => p.symbol === chartCoin)
-      : null;
+    const pos = findChartOpenPosition();
 
     if (!pos) {
       if (banner) banner.style.display = 'none';
@@ -1731,12 +1760,33 @@
 
       const sliceStart = Math.max(0, candles.length - 180);
       const cSlice = candles.slice(sliceStart);
+      const pos = findChartOpenPosition();
+      const entryTime = getChartEntryBarTime(pos);
+      const hasEntryInRange = Boolean(
+        pos && entryTime && cSlice.length > 0 && entryTime >= cSlice[0].time && entryTime <= cSlice[cSlice.length - 1].time
+      );
+      const styledSlice = hasEntryInRange
+        ? cSlice.map(c => (c.time === entryTime ? { ...c, color: '#2563EB', borderColor: '#1D4ED8', wickColor: '#2563EB' } : c))
+        : cSlice;
       const e34Slice = cSlice.map((c, idx) => ({ time: c.time, value: e34[sliceStart + idx] }));
       const e89Slice = cSlice.map((c, idx) => ({ time: c.time, value: e89[sliceStart + idx] }));
       const e200Slice = cSlice.map((c, idx) => ({ time: c.time, value: e200[sliceStart + idx] }));
 
       tvCandleSeries.applyOptions({ priceFormat: getCoinPriceFormat(chartCoin) });
-      tvCandleSeries.setData(cSlice);
+      tvCandleSeries.setData(styledSlice);
+      if (hasEntryInRange) {
+        tvCandleSeries.setMarkers([{
+          time: entryTime,
+          position: pos.direction === 'LONG' ? 'belowBar' : 'aboveBar',
+          color: '#10B981',
+          shape: 'circle',
+          text: 'ENTRY',
+        }]);
+        chartEntryMarker = { time: entryTime, price: Number(pos.entry_price) };
+      } else {
+        tvCandleSeries.setMarkers([]);
+        chartEntryMarker = null;
+      }
       tvEma34Series.setData(e34Slice);
       tvEma89Series.setData(e89Slice);
       tvEma200Series.setData(e200Slice);
