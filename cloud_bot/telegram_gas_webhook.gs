@@ -93,22 +93,106 @@ function saveSubscribers_(subs) {
   PropertiesService.getScriptProperties().setProperty(CONFIG.SUBSCRIBERS_PROP_KEY, JSON.stringify(subs));
 }
 
+function isAdmin_(chatId) {
+  return Boolean(CONFIG.OWNER_CHAT_ID) && String(chatId) === String(CONFIG.OWNER_CHAT_ID).trim();
+}
+
+function isBlocked_(chatId) {
+  if (isAdmin_(chatId)) return false;
+  const subs = getSubscribers_();
+  const rec = subs[String(chatId)];
+  return Boolean(rec && rec.blocked === true);
+}
+
+function escapeHtml_(str) {
+  return String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function nowUtcStr_() {
+  return new Date().toISOString().slice(0, 16).replace('T', ' ');
+}
+
 function upsertSubscriber_(chatObj, fromObj, mutedOverride) {
   const chatId = String(chatObj.id);
   const subs = getSubscribers_();
   const prev = subs[chatId] || {};
+  const firstName = (fromObj && fromObj.first_name ? String(fromObj.first_name) : prev.first_name) || '';
+  const username = (fromObj && fromObj.username ? String(fromObj.username) : prev.username) || '';
   const displayName =
     (chatObj.title && String(chatObj.title)) ||
-    (fromObj && (fromObj.username ? '@' + fromObj.username : fromObj.first_name)) ||
+    firstName ||
+    (username ? '@' + username : '') ||
     prev.name ||
     'Trader';
+  const nowStr = nowUtcStr_();
   subs[chatId] = {
     name: displayName,
+    username: username,
+    first_name: firstName,
     muted: typeof mutedOverride === 'boolean' ? mutedOverride : Boolean(prev.muted),
-    joined_utc: prev.joined_utc || new Date().toISOString().slice(0, 16).replace('T', ' '),
+    blocked: Boolean(prev.blocked),
+    joined_utc: prev.joined_utc || nowStr,
+    last_seen_utc: nowStr,
   };
   saveSubscribers_(subs);
   return subs[chatId];
+}
+
+function setUserBlocked_(targetChatId, blocked) {
+  const tid = String(targetChatId || '').trim();
+  const subs = getSubscribers_();
+  const prev = subs[tid] || {};
+  const nowStr = nowUtcStr_();
+  subs[tid] = {
+    name: prev.name || ('User ' + tid),
+    username: prev.username || '',
+    first_name: prev.first_name || '',
+    muted: Boolean(prev.muted),
+    blocked: Boolean(blocked),
+    joined_utc: prev.joined_utc || nowStr,
+    last_seen_utc: prev.last_seen_utc || nowStr,
+  };
+  saveSubscribers_(subs);
+  return subs[tid];
+}
+
+function buildAdminUsersView_() {
+  const subs = getSubscribers_();
+  const ids = Object.keys(subs);
+  if (ids.length === 0) {
+    return {
+      text: '👑 <b>QUẢN TRỊ NGƯỜI DÙNG BOT</b>\n<i>Chưa có người dùng nào tương tác.</i>',
+      markup: null,
+    };
+  }
+  let text = '👑 <b>QUẢN TRỊ NGƯỜI DÙNG BOT (' + ids.length + ' tài khoản)</b>\n\n';
+  const rows = [];
+  ids.forEach((cid, idx) => {
+    const r = subs[cid] || {};
+    const uname = r.username ? ' (@' + escapeHtml_(r.username) + ')' : '';
+    const statusTxt = r.blocked ? '⛔ Đã chặn' : (r.muted ? '🔕 Tắt tin' : '✅ Hoạt động');
+    const roleTag = isAdmin_(cid) ? ' 👑' : '';
+    text +=
+      (idx + 1) + '. <b>' + escapeHtml_(r.name || 'Trader') + '</b>' + uname + roleTag +
+      ' · ID: <code>' + escapeHtml_(cid) + '</code>\n' +
+      '   ' + statusTxt + ' · Tham gia: <code>' + escapeHtml_(r.joined_utc || '--') + '</code>\n';
+    if (!isAdmin_(cid)) {
+      const shortName = String(r.name || 'User').slice(0, 14);
+      if (r.blocked) {
+        rows.push([{ text: '✅ Mở chặn ' + shortName + ' (' + cid + ')', callback_data: 'admin_unban_' + cid }]);
+      } else {
+        rows.push([{ text: '⛔ Chặn ' + shortName + ' (' + cid + ')', callback_data: 'admin_ban_' + cid }]);
+      }
+    }
+  });
+  text += '\n💡 <i>Lệnh nhanh:</i> <code>/ban &lt;id&gt;</code> · <code>/unban &lt;id&gt;</code>';
+  return {
+    text: text,
+    markup: rows.length > 0 ? { inline_keyboard: rows } : null,
+  };
 }
 
 function broadcastToSubscribers_(text, webappUrl, excludeChatId) {
@@ -121,7 +205,7 @@ function broadcastToSubscribers_(text, webappUrl, excludeChatId) {
 
   ids.forEach(cid => {
     const rec = subs[cid];
-    if (!rec || rec.muted === true) {
+    if (!rec || rec.blocked === true || rec.muted === true) {
       skipped += 1;
       return;
     }
@@ -153,8 +237,14 @@ function broadcastToSubscribers_(text, webappUrl, excludeChatId) {
 
 function handleMessage_(msg) {
   const chatId = msg.chat.id;
+  if (isBlocked_(chatId)) {
+    sendTelegram_(chatId, '⛔ Bạn không có quyền truy cập bot này.');
+    return;
+  }
+
   const rawText = (msg.text || '').trim();
-  const firstToken = rawText.split(/\s+/)[0].toLowerCase().replace(/@[a-z0-9_]+$/i, '');
+  const tokens = rawText.split(/\s+/);
+  const firstToken = tokens[0].toLowerCase().replace(/@[a-z0-9_]+$/i, '');
 
   // Map quick-reply keyboard labels to commands (supports both 4-col compact & legacy labels)
   let cmd = firstToken;
@@ -166,6 +256,46 @@ function handleMessage_(msg) {
   else if (rawText === '🔕 Tắt tin') cmd = '/mute';
   else if (rawText === '🕯️ Chart') cmd = '/chart';
   else if (rawText === '🔄 Menu') cmd = '/menu';
+
+  // Auto-record / refresh active user profile on any interaction (unless /start, /subscribe, /mute set muted explicitly)
+  if (cmd !== '/start' && cmd !== '/menu' && cmd !== '/subscribe' && cmd !== '/mute') {
+    upsertSubscriber_(msg.chat, msg.from);
+  }
+
+  if (cmd === '/admin' || cmd === '/users') {
+    if (!isAdmin_(chatId)) {
+      sendTelegram_(chatId, '⛔ Lệnh này chỉ dành riêng cho Admin.');
+      return;
+    }
+    const view = buildAdminUsersView_();
+    sendTelegram_(chatId, view.text, view.markup);
+    return;
+  }
+
+  if (cmd === '/ban' || cmd === '/unban') {
+    if (!isAdmin_(chatId)) {
+      sendTelegram_(chatId, '⛔ Lệnh này chỉ dành riêng cho Admin.');
+      return;
+    }
+    const targetId = (tokens[1] || '').trim();
+    if (!targetId) {
+      sendTelegram_(chatId, '⚠️ Cú pháp: <code>' + cmd + ' &lt;chat_id&gt;</code>');
+      return;
+    }
+    if (cmd === '/ban' && isAdmin_(targetId)) {
+      sendTelegram_(chatId, '⚠️ Không thể tự chặn Admin (OWNER_CHAT_ID).');
+      return;
+    }
+    const isBan = cmd === '/ban';
+    const rec = setUserBlocked_(targetId, isBan);
+    sendTelegram_(
+      chatId,
+      isBan
+        ? '⛔ Đã chặn người dùng <b>' + escapeHtml_(rec.name) + '</b> (<code>' + escapeHtml_(targetId) + '</code>).'
+        : '✅ Đã mở chặn người dùng <b>' + escapeHtml_(rec.name) + '</b> (<code>' + escapeHtml_(targetId) + '</code>).'
+    );
+    return;
+  }
 
   if (cmd === '/start' || cmd === '/menu') {
     upsertSubscriber_(msg.chat, msg.from, false);
@@ -235,6 +365,29 @@ function handleCallback_(cb) {
   const msgId = cb.message.message_id;
   const data = cb.data || '';
   answerCallback_(cb.id);
+
+  if (isBlocked_(chatId)) {
+    sendTelegram_(chatId, '⛔ Bạn không có quyền truy cập bot này.');
+    return;
+  }
+
+  upsertSubscriber_(cb.message.chat, cb.from);
+
+  if (data.indexOf('admin_ban_') === 0 || data.indexOf('admin_unban_') === 0) {
+    if (!isAdmin_(chatId)) {
+      sendTelegram_(chatId, '⛔ Chỉ Admin mới được thao tác.');
+      return;
+    }
+    const isBan = data.indexOf('admin_ban_') === 0;
+    const targetId = data.replace(isBan ? 'admin_ban_' : 'admin_unban_', '').trim();
+    if (isBan && isAdmin_(targetId)) {
+      return;
+    }
+    setUserBlocked_(targetId, isBan);
+    const view = buildAdminUsersView_();
+    editMessageText_(chatId, msgId, view.text, view.markup);
+    return;
+  }
 
   if (data === 'cmd_status') {
     sendTelegram_(chatId, formatStatusText_(fetchDashboard_()), buildInlineDashboardKeyboard_(chatId));
