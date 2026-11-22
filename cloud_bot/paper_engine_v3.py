@@ -10,6 +10,7 @@ dashboard state to `e:\CHICKTRADE\docs\data\live_dashboard.json`.
 Does NOT modify `bot/` or `core/`.
 """
 import argparse
+import base64
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 import json
@@ -474,7 +475,157 @@ def _brake_status_text(acc: dict) -> str:
     return f"An toàn ({int(acc.get('portfolio_consec_sl', 0))}/2 SL)"
 
 
-def _send_telegram(event_or_text: Any) -> None:
+def build_quickchart_png(
+    sym: str,
+    tf: str,
+    candles_rows: List[List[float]],
+    pos: Optional[dict] = None,
+) -> Optional[bytes]:
+    """Render 800x460 PNG candlestick + EMA 34/89/200 + Entry/SL/TP1/TP2 lines + blue Entry dot via QuickChart."""
+    if not candles_rows or len(candles_rows) < 10:
+        return None
+    tail = candles_rows[-60:]
+    n_show = len(tail)
+    labels: List[str] = []
+    wicks: List[List[float]] = []
+    bodies: List[List[float]] = []
+    colors: List[str] = []
+    e34_show: List[float] = []
+    e89_show: List[float] = []
+    e200_show: List[float] = []
+
+    y_min = float("inf")
+    y_max = float("-inf")
+    for r in tail:
+        y_min = min(y_min, float(r[3]), float(r[5]), float(r[6]), float(r[7]))
+        y_max = max(y_max, float(r[2]), float(r[5]), float(r[6]), float(r[7]))
+
+    entry_idx = -1
+    if pos:
+        tf_sec = TF_MS.get(tf, 3_600_000) // 1000
+        raw_entry_sec = int(pos.get("entry_bar_ts") or 0)
+        aligned_sec = (raw_entry_sec // tf_sec) * tf_sec if raw_entry_sec > 0 else 0
+        if aligned_sec and int(tail[0][0]) <= aligned_sec <= int(tail[-1][0]):
+            for i, r in enumerate(tail):
+                t_i = int(r[0])
+                if t_i == aligned_sec or (t_i <= aligned_sec and (i == n_show - 1 or int(tail[i + 1][0]) > aligned_sec)):
+                    entry_idx = i
+                    break
+        if entry_idx < 0:
+            entry_idx = n_show - 1
+        for k in ("entry_price", "active_sl_price", "tp1_price", "tp2_price"):
+            v = float(pos.get(k) or 0.0)
+            if v > 0:
+                y_min = min(y_min, v)
+                y_max = max(y_max, v)
+
+    pad_range = max((y_max - y_min) * 0.05, y_max * 0.001)
+    min_body = max((y_max - y_min) * 0.0025, y_max * 0.00015)
+
+    for r in tail:
+        t_sec = int(r[0])
+        o, h, l, c = float(r[1]), float(r[2]), float(r[3]), float(r[4])
+        dt_vn = datetime.fromtimestamp(t_sec + 7 * 3600, tz=timezone.utc)
+        lbl = dt_vn.strftime("%d/%m %Hh") if tf == "4h" else dt_vn.strftime("%H:%M")
+        labels.append(lbl)
+        wicks.append([l, h])
+        if abs(c - o) < min_body:
+            bodies.append([o - min_body * 0.5, o + min_body * 0.5])
+        else:
+            bodies.append([min(o, c), max(o, c)])
+        # Keep original green/red candle colors (never recolor the entry candle)
+        colors.append("#059669" if c >= o else "#DC2626")
+        e34_show.append(float(r[5]))
+        e89_show.append(float(r[6]))
+        e200_show.append(float(r[7]))
+
+    datasets: List[dict] = [
+        {"type": "line", "label": "EMA 34", "data": e34_show, "borderColor": "#0284C7", "borderWidth": 2, "pointRadius": 0, "fill": False, "tension": 0.15, "order": 1},
+        {"type": "line", "label": "EMA 89", "data": e89_show, "borderColor": "#D97706", "borderWidth": 2, "pointRadius": 0, "fill": False, "tension": 0.15, "order": 1},
+        {"type": "line", "label": "EMA 200", "data": e200_show, "borderColor": "#7C3AED", "borderWidth": 2.2, "pointRadius": 0, "fill": False, "tension": 0.15, "order": 1},
+        {"type": "bar", "label": "Wick", "data": wicks, "backgroundColor": colors, "barThickness": 2, "grouped": False, "order": 2},
+        {"type": "bar", "label": "Candle", "data": bodies, "backgroundColor": colors, "barPercentage": 0.72, "categoryPercentage": 0.88, "grouped": False, "order": 3},
+    ]
+
+    if pos:
+        def _add_hline(lbl: str, price: float, col: str, dashed: bool) -> None:
+            if price <= 0:
+                return
+            ds: Dict[str, Any] = {
+                "type": "line",
+                "label": lbl,
+                "data": [price] * n_show,
+                "borderColor": col,
+                "borderWidth": 1.6 if dashed else 2,
+                "pointRadius": 0,
+                "fill": False,
+                "order": 0,
+            }
+            if dashed:
+                ds["borderDash"] = [6, 4]
+            datasets.append(ds)
+
+        _add_hline(f"Entry {_fmt_px(pos['entry_price'])}", float(pos["entry_price"]), "#2563EB", True)
+        _add_hline(f"SL {_fmt_px(pos['active_sl_price'])}", float(pos["active_sl_price"]), "#DC2626", False)
+        _add_hline(f"TP1 {_fmt_px(pos['tp1_price'])}", float(pos["tp1_price"]), "#059669", True)
+        _add_hline(f"TP2 {_fmt_px(pos['tp2_price'])}", float(pos["tp2_price"]), "#15803D", False)
+
+        if entry_idx >= 0:
+            dot_data: List[Optional[float]] = [None] * n_show
+            dot_data[entry_idx] = float(pos["entry_price"])
+            datasets.append({
+                "type": "line",
+                "label": "Entry Point",
+                "data": dot_data,
+                "showLine": False,
+                "pointRadius": 7,
+                "pointBackgroundColor": "#2563EB",
+                "pointBorderColor": "#FFFFFF",
+                "pointBorderWidth": 2,
+                "order": 0,
+            })
+
+    title_extra = f" · {pos['direction']} {pos['setup_code']}" if pos else ""
+    chart_cfg = {
+        "type": "bar",
+        "data": {"labels": labels, "datasets": datasets},
+        "options": {
+            "plugins": {
+                "title": {
+                    "display": True,
+                    "text": f"{sym} · {tf.upper()} ({n_show} nến · EMA 34/89/200{title_extra})",
+                    "color": "#0F172A",
+                    "font": {"size": 14, "weight": "bold"},
+                },
+                "legend": {
+                    "display": True,
+                    "labels": {
+                        "color": "#334155",
+                        "font": {"size": 11},
+                    },
+                },
+            },
+            "scales": {
+                "x": {"ticks": {"color": "#475569", "maxTicksLimit": 10, "maxRotation": 0}, "grid": {"color": "#F1F5F9"}},
+                "y": {"position": "right", "min": y_min - pad_range, "max": y_max + pad_range, "ticks": {"color": "#334155"}, "grid": {"color": "#E2E8F0"}},
+            },
+        },
+    }
+
+    try:
+        res = requests.post(
+            "https://quickchart.io/chart",
+            json={"version": "3", "width": 800, "height": 460, "backgroundColor": "#FFFFFF", "format": "png", "chart": chart_cfg},
+            timeout=15,
+        )
+        if res.status_code == 200 and res.content:
+            return res.content
+    except Exception as exc:
+        print(f"[WARN] QuickChart PNG build failed for {sym} {tf}: {exc}")
+    return None
+
+
+def _send_telegram(event_or_text: Any, chart_candles_map: Optional[Dict[str, Dict[str, List[List[float]]]]] = None) -> None:
     token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
     chat_id = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
     gas_url = os.environ.get("GAS_BROADCAST_URL", "").strip()
@@ -496,23 +647,59 @@ def _send_telegram(event_or_text: Any) -> None:
     if not text:
         return
 
+    png_bytes: Optional[bytes] = None
+    photo_filename = "chart.png"
+    if event_type == "OPEN" and pos_ref is not None and chart_candles_map:
+        sym = str(pos_ref.get("symbol", ""))
+        tf = str(pos_ref.get("tf", ""))
+        rows = chart_candles_map.get(sym, {}).get(tf, [])
+        if rows:
+            png_bytes = build_quickchart_png(sym, tf, rows, pos_ref)
+            photo_filename = f"{sym}_{tf}.png"
+
     if token and chat_id:
-        payload: Dict[str, Any] = {
-            "chat_id": chat_id,
-            "text": text,
-            "parse_mode": "HTML",
-            "disable_web_page_preview": True,
-        }
-        if reply_to_msg_id:
-            payload["reply_to_message_id"] = int(reply_to_msg_id)
-            payload["allow_sending_without_reply"] = True
-        try:
-            res = requests.post(f"https://api.telegram.org/bot{token}/sendMessage", json=payload, timeout=10)
-            rj = res.json() if res.ok else {}
-            if rj.get("ok") and rj.get("result", {}).get("message_id") and event_type == "OPEN" and pos_ref is not None:
-                pos_ref["tg_open_msg_id"] = int(rj["result"]["message_id"])
-        except Exception as exc:
-            print(f"[WARN] Telegram notify failed: {exc}")
+        sent_ok = False
+        if png_bytes and len(text) <= 1020:
+            try:
+                data_form: Dict[str, Any] = {
+                    "chat_id": chat_id,
+                    "caption": text,
+                    "parse_mode": "HTML",
+                }
+                if reply_to_msg_id:
+                    data_form["reply_to_message_id"] = str(int(reply_to_msg_id))
+                    data_form["allow_sending_without_reply"] = "true"
+                res = requests.post(
+                    f"https://api.telegram.org/bot{token}/sendPhoto",
+                    data=data_form,
+                    files={"photo": (photo_filename, png_bytes, "image/png")},
+                    timeout=15,
+                )
+                rj = res.json() if res.ok else {}
+                if rj.get("ok"):
+                    sent_ok = True
+                    if rj.get("result", {}).get("message_id") and event_type == "OPEN" and pos_ref is not None:
+                        pos_ref["tg_open_msg_id"] = int(rj["result"]["message_id"])
+            except Exception as exc:
+                print(f"[WARN] Telegram sendPhoto failed, falling back to text: {exc}")
+
+        if not sent_ok:
+            payload: Dict[str, Any] = {
+                "chat_id": chat_id,
+                "text": text,
+                "parse_mode": "HTML",
+                "disable_web_page_preview": True,
+            }
+            if reply_to_msg_id:
+                payload["reply_to_message_id"] = int(reply_to_msg_id)
+                payload["allow_sending_without_reply"] = True
+            try:
+                res = requests.post(f"https://api.telegram.org/bot{token}/sendMessage", json=payload, timeout=10)
+                rj = res.json() if res.ok else {}
+                if rj.get("ok") and rj.get("result", {}).get("message_id") and event_type == "OPEN" and pos_ref is not None:
+                    pos_ref["tg_open_msg_id"] = int(rj["result"]["message_id"])
+            except Exception as exc:
+                print(f"[WARN] Telegram notify failed: {exc}")
 
     if gas_url.startswith("https://"):
         b_payload: Dict[str, Any] = {
@@ -525,8 +712,11 @@ def _send_telegram(event_or_text: Any) -> None:
             b_payload["event_type"] = event_type
         if pos_id:
             b_payload["pos_id"] = pos_id
+        if png_bytes:
+            b_payload["photo_base64"] = base64.b64encode(png_bytes).decode("ascii")
+            b_payload["photo_filename"] = photo_filename
         try:
-            requests.post(gas_url, json=b_payload, timeout=12)
+            requests.post(gas_url, json=b_payload, timeout=15)
         except Exception as exc:
             print(f"[WARN] Broadcast failed: {exc}")
 
@@ -932,12 +1122,10 @@ def update_open_positions(
                             "pos_id": pos["id"],
                             "reply_to_msg_id": pos.get("tg_open_msg_id"),
                             "text": (
-                                f"🎯 <b>ĐÃ CHỐT TP1 (50%) — {sym} · {tf.upper()} [{pos['setup_code']}]</b>{must_tag}\n"
-                                f"✅ Đã bỏ túi Chân 1: <b>{_fmt_signed_usd(pnl1)}</b> (+{tp1_u_val:g}U sau phí)\n\n"
-                                f"• Giá chạm TP1: <code>{_fmt_px(pos['tp1_price'])}</code> (Entry: <code>{_fmt_px(pos['entry_price'])}</code>)\n"
-                                f"• Khối lượng Chân 2 còn lại: <code>{rem_q_tp1}</code> {base_coin} (50%)\n"
-                                f"• 🛡️ Đã dời SL Chân 2 về: <code>{_fmt_px(pos['active_sl_price'])}</code> ({l2_desc} · Không tính vào phanh 2-SL)\n"
-                                f"• 🚀 Đích gồng TP2 (+{tp2_u_val:g}U): <code>{_fmt_px(pos['tp2_price'])}</code> (Dự kiến tổng lãi nếu chạm TP2: <b>{_fmt_signed_usd(pos['expected_tp2_usd'])}</b>)"
+                                f"🎯 <b>CHỐT TP1 (50%) — {sym} · {tf.upper()} [{pos['setup_code']}]</b>{must_tag}\n"
+                                f"• Chốt Chân 1: <b>{_fmt_signed_usd(pnl1)}</b> (+{tp1_u_val:g}U) tại <code>{_fmt_px(pos['tp1_price'])}</code>\n"
+                                f"• 🛡️ Dời SL Chân 2 ({rem_q_tp1} {base_coin}): <code>{_fmt_px(pos['active_sl_price'])}</code> ({l2_desc})\n"
+                                f"• 🚀 Đích TP2 (+{tp2_u_val:g}U): <code>{_fmt_px(pos['tp2_price'])}</code> (Tổng lãi nếu đạt: <b>{_fmt_signed_usd(pos['expected_tp2_usd'])}</b>)"
                             ),
                         })
                         if (d == 1 and bh >= pos["tp2_price"]) or (d == -1 and bl <= pos["tp2_price"]):
@@ -1096,14 +1284,10 @@ def update_open_positions(
             "reply_to_msg_id": pos.get("tg_open_msg_id"),
             "text": (
                 f"{title_line}\n"
-                f"💵 Kết quả lệnh: <b>{_fmt_signed_usd(tot_pnl)}</b> ({eq_impact_pct:+.2f}% vốn · {pnl_u:+.2f}U)\n\n"
+                f"• Kết quả: <b>{_fmt_signed_usd(tot_pnl)}</b> ({eq_impact_pct:+.2f}% vốn · {pnl_u:+.2f}U) · Giữ: <b>{dur_str}</b>\n"
                 f"{detail_line}\n"
-                f"• Thời gian giữ lệnh: <b>{dur_str}</b>\n"
-                f"• Cập nhật Setup (3Y+Live): Thắng tiền <b>{setup_pwr:.1f}%</b> · WR <b>{setup_wr:.1f}%</b> ({setup_samples} lệnh)\n\n"
-                f"💼 <b>Trạng Thái Quỹ CHICKTRADE v3.3:</b>\n"
-                f"• Số dư hiện tại (Balance): <b>${acc['equity']:,.2f}</b> ({roi_now:+.2f}% · {_fmt_signed_usd(net_from_init)})\n"
-                f"• Bậc lãi kép S2: <b>Bậc {step_n}</b> (${unit_usd:,.2f}/1U) — Đạt <b>{prog_pct:.1f}%</b> lộ trình lên Bậc {step_n + 1} (${next_eq:,.2f})\n"
-                f"• Lệnh đang mở: <b>{rem_open_cnt}/5 lệnh</b> · Phanh 2-SL: <b>{_brake_status_text(acc)}</b>"
+                f"• Balance: <b>${acc['equity']:,.2f}</b> ({roi_now:+.2f}%) · Bậc {step_n} ({prog_pct:.1f}% → Bậc {step_n + 1}) · Mở: <b>{rem_open_cnt}/5</b>\n"
+                f"• Setup (3Y+Live): WR <b>{setup_wr:.1f}%</b> · Thắng tiền <b>{setup_pwr:.1f}%</b> ({setup_samples} lệnh) · Phanh: <b>{_brake_status_text(acc)}</b>"
             ),
         })
         if triggered_shadow_pause:
@@ -1476,14 +1660,15 @@ def main():
         events.append(build_recap_message(state, now_dt, is_weekly=True))
         state["last_weekly_recap_week"] = week_key
 
+    chart_payload = build_chart_candles_payload(closed_data, state["updated_at_utc"], tail_n=80)
+
     for ev in events:
-        _send_telegram(ev)
+        _send_telegram(ev, chart_payload.get("candles"))
 
     os.makedirs(os.path.dirname(OUT_JSON), exist_ok=True)
     with open(OUT_JSON, "w", encoding="utf-8") as f:
         json.dump(state, f, ensure_ascii=False, indent=2)
 
-    chart_payload = build_chart_candles_payload(closed_data, state["updated_at_utc"], tail_n=80)
     with open(OUT_CHART_JSON, "w", encoding="utf-8") as f:
         json.dump(chart_payload, f, separators=(",", ":"), ensure_ascii=False)
 

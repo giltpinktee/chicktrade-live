@@ -885,12 +885,8 @@
   <!-- TAB 2: BIỂU ĐỒ TRADINGVIEW -->
   <section id="tab-chart" class="tab-panel">
     <div class="card">
-      <div class="card-head">
-        <div>
-          <h2>🕯️ Biểu Đồ Live · EMA 34 / 89 / 200</h2>
-          <p>Dữ liệu Binance Futures 260 nến · Tự động gắn Entry / SL / TP1 / TP2 nếu Coin đang có lệnh mở</p>
-        </div>
-        <div class="chart-toolbar">
+      <div class="card-head" style="margin-bottom:8px;">
+        <div class="chart-toolbar" style="width:100%;">
           <div class="chart-pill-row" id="chart-coin-pills">
             <button type="button" class="c-pill active" data-coin="BTCUSDT" onclick="selectChartCoin('BTCUSDT')">BTC</button>
             <button type="button" class="c-pill" data-coin="ETHUSDT" onclick="selectChartCoin('ETHUSDT')">ETH</button>
@@ -904,7 +900,7 @@
             <button type="button" class="c-pill" data-tf="30m" onclick="selectChartTf('30m')">30m</button>
             <button type="button" class="c-pill active" data-tf="1h" onclick="selectChartTf('1h')">1h</button>
             <button type="button" class="c-pill" data-tf="4h" onclick="selectChartTf('4h')">4h</button>
-            <button type="button" class="c-pill" onclick="resetChartFocus()" title="Auto-focus về 95 nến mới nhất">🎯 Căn giữa</button>
+            <button type="button" class="c-pill" onclick="resetChartFocus()" title="Auto-focus về nến mới nhất">🎯 Căn giữa</button>
           </div>
         </div>
       </div>
@@ -1085,6 +1081,7 @@
   let chartPrevEma34 = null;
   let chartPrevEma89 = null;
   let chartPrevEma200 = null;
+  window.__CHART_CACHE = null;
 
   function switchTab(tabId) {
     activeTabId = tabId;
@@ -1601,7 +1598,7 @@
       const ey = tvCandleSeries.priceToCoordinate(chartEntryMarker.price);
       if (ex !== null && ey !== null && isFinite(ex) && isFinite(ey) && ey >= 4 && ey <= maxY - 4) {
         html.push(
-          `<div title="Entry ${fmtPx(chartEntryMarker.price)}" style="position:absolute;left:${ex.toFixed(1)}px;top:${ey.toFixed(1)}px;width:10px;height:10px;border-radius:50%;background:#10B981;border:2px solid #FFFFFF;transform:translate(-50%,-50%);box-shadow:0 1px 4px rgba(15,23,42,0.35);"></div>`
+          `<div title="Entry ${fmtPx(chartEntryMarker.price)}" style="position:absolute;left:${ex.toFixed(1)}px;top:${ey.toFixed(1)}px;width:11px;height:11px;border-radius:50%;background:#2563EB;border:2px solid #FFFFFF;transform:translate(-50%,-50%);box-shadow:0 1px 5px rgba(37,99,235,0.55);"></div>`
         );
       }
     }
@@ -1613,7 +1610,7 @@
     tvChart.priceScale('right').applyOptions({ autoScale: true });
     if (chartCandleCount > 0) {
       tvChart.timeScale().setVisibleLogicalRange({
-        from: Math.max(0, chartCandleCount - 95),
+        from: Math.max(0, chartCandleCount - 75),
         to: chartCandleCount + 6,
       });
     } else {
@@ -1623,8 +1620,18 @@
   }
 
   function syncChartPills() {
+    const openMap = {};
+    if (dashData && Array.isArray(dashData.open_positions)) {
+      for (const p of dashData.open_positions) {
+        openMap[p.symbol] = p;
+      }
+    }
     document.querySelectorAll('#chart-coin-pills .c-pill').forEach(b => {
-      b.classList.toggle('active', b.getAttribute('data-coin') === chartCoin);
+      const sym = b.getAttribute('data-coin');
+      const base = sym.replace('USDT', '');
+      const pos = openMap[sym];
+      b.textContent = pos ? `${pos.direction === 'LONG' ? '🟢' : '🔴'} ${base}` : base;
+      b.classList.toggle('active', sym === chartCoin);
     });
     document.querySelectorAll('#chart-tf-pills .c-pill').forEach(b => {
       b.classList.toggle('active', b.getAttribute('data-tf') === chartTf);
@@ -1713,11 +1720,16 @@
       const remQty = Number(pos.qty) * (pos.tp1_hit ? 0.5 : 1.0);
       const totPnl = Number(pos.realized_pnl_usd || 0) + d * (curPx - Number(pos.entry_price)) * remQty;
       const col = totPnl >= 0 ? '#059669' : '#DC2626';
+      const expTp1 = Number(pos.expected_tp1_usd || 0);
+      const expTp2 = Number(pos.expected_tp2_usd || 0);
+      const expSl = Number(pos.expected_sl_usd || -Number(pos.worst_sl_usd || 0));
+      const wrLive = Number(pos.setup_live_wr_pct !== undefined ? pos.setup_live_wr_pct : (pos.wr_pct || 0)).toFixed(1);
+      const pwrLive = Number(pos.setup_live_profit_wr_pct !== undefined ? pos.setup_live_profit_wr_pct : (pos.profit_wr_pct || 0)).toFixed(1);
       banner.style.display = 'flex';
       banner.className = 'chart-pos-banner num';
       banner.innerHTML =
-        `<span>📌 Đang mở lệnh <b>${pos.symbol} · ${pos.tf.toUpperCase()} [${shortSetupCode(pos.setup_code)}] ${pos.direction}</b> · Entry <code>${fmtPx(pos.entry_price)}</code></span>` +
-        `<span>PnL Live: <b style="color:${col};">${fmtUsd(totPnl, true)}</b> · TP1 <code>${fmtPx(pos.tp1_price)}</code> · SL <code>${fmtPx(pos.active_sl_price)}</code></span>`;
+        `<span>📌 <b>${pos.symbol} · ${pos.tf.toUpperCase()} [${shortSetupCode(pos.setup_code)}] ${pos.direction}</b> · Entry <code>${fmtPx(pos.entry_price)}</code> · SL <code>${fmtPx(pos.active_sl_price)}</code> · TP1 <code>${fmtPx(pos.tp1_price)}</code> · TP2 <code>${fmtPx(pos.tp2_price)}</code></span>` +
+        `<span>PnL: <b style="color:${col};">${fmtUsd(totPnl, true)}</b> · Dự kiến Win <b style="color:#059669;">${fmtUsd(expTp1, true)}/${fmtUsd(expTp2, true)}</b> · SL <b style="color:#DC2626;">${fmtUsd(expSl, true)}</b> · WR <b>${wrLive}%</b> (Thắng tiền <b>${pwrLive}%</b>)</span>`;
     }
   }
 
@@ -1734,55 +1746,105 @@
     if (e200El) e200El.textContent = fmtPx(e200);
   }
 
+  function findNearestBarTime(cSlice, targetTime) {
+    if (!cSlice.length || !targetTime) return null;
+    if (targetTime < cSlice[0].time || targetTime > cSlice[cSlice.length - 1].time) return null;
+    for (let i = 0; i < cSlice.length; i++) {
+      if (cSlice[i].time === targetTime) return cSlice[i].time;
+      if (cSlice[i].time < targetTime && (i === cSlice.length - 1 || cSlice[i + 1].time > targetTime)) {
+        return cSlice[i].time;
+      }
+    }
+    return null;
+  }
+
   async function loadChartData() {
     ensureTvChart();
     if (!tvChart || !tvCandleSeries) return;
     syncChartPills();
     try {
-      const url = `https://fapi.binance.com/fapi/v1/klines?symbol=${chartCoin}&interval=${chartTf}&limit=260`;
-      const resp = await fetch(url, { cache: 'no-store' });
-      if (!resp.ok) return;
-      const raw = await resp.json();
-      if (!Array.isArray(raw) || raw.length === 0) return;
-
       const vnOffsetSec = 7 * 3600;
-      const candles = raw.map(k => ({
-        time: Math.floor(Number(k[0]) / 1000) + vnOffsetSec,
-        open: parseFloat(k[1]),
-        high: parseFloat(k[2]),
-        low: parseFloat(k[3]),
-        close: parseFloat(k[4]),
-      }));
-      const closes = candles.map(c => c.close);
-      const e34 = computeEmaSeries(closes, 34);
-      const e89 = computeEmaSeries(closes, 89);
-      const e200 = computeEmaSeries(closes, 200);
+      const tfSec = { '15m': 900, '30m': 1800, '1h': 3600, '4h': 14400 }[chartTf] || 3600;
+      let cSlice = [];
+      let e34Slice = [];
+      let e89Slice = [];
+      let e200Slice = [];
 
-      const sliceStart = Math.max(0, candles.length - 180);
-      const cSlice = candles.slice(sliceStart);
+      // Priority #1: 0ms RAM-cached engine-exact chart_candles.json
+      const cachedRows = window.__CHART_CACHE && window.__CHART_CACHE.candles && window.__CHART_CACHE.candles[chartCoin]
+        ? window.__CHART_CACHE.candles[chartCoin][chartTf]
+        : null;
+
+      if (Array.isArray(cachedRows) && cachedRows.length >= 20) {
+        for (const r of cachedRows) {
+          const t = Number(r[0]) + vnOffsetSec;
+          cSlice.push({ time: t, open: Number(r[1]), high: Number(r[2]), low: Number(r[3]), close: Number(r[4]) });
+          e34Slice.push({ time: t, value: Number(r[5]) });
+          e89Slice.push({ time: t, value: Number(r[6]) });
+          e200Slice.push({ time: t, value: Number(r[7]) });
+        }
+        // Append live forming bar if Binance ticker is available and wall-clock moved to next candle
+        const livePx = liveTickers[chartCoin];
+        const lastC = cSlice[cSlice.length - 1];
+        const curBarTime = Math.floor(Date.now() / 1000 / tfSec) * tfSec + vnOffsetSec;
+        if (isFinite(livePx) && livePx > 0 && curBarTime > lastC.time) {
+          const prevE34 = e34Slice[e34Slice.length - 1].value;
+          const prevE89 = e89Slice[e89Slice.length - 1].value;
+          const prevE200 = e200Slice[e200Slice.length - 1].value;
+          cSlice.push({
+            time: curBarTime,
+            open: lastC.close,
+            high: Math.max(lastC.close, livePx),
+            low: Math.min(lastC.close, livePx),
+            close: livePx,
+          });
+          e34Slice.push({ time: curBarTime, value: livePx * (2 / 35) + prevE34 * (1 - 2 / 35) });
+          e89Slice.push({ time: curBarTime, value: livePx * (2 / 90) + prevE89 * (1 - 2 / 90) });
+          e200Slice.push({ time: curBarTime, value: livePx * (2 / 201) + prevE200 * (1 - 2 / 201) });
+        }
+      } else {
+        // Fallback: Binance Futures klines
+        const url = `https://fapi.binance.com/fapi/v1/klines?symbol=${chartCoin}&interval=${chartTf}&limit=260`;
+        const resp = await fetch(url, { cache: 'no-store' });
+        if (!resp.ok) return;
+        const raw = await resp.json();
+        if (!Array.isArray(raw) || raw.length === 0) return;
+
+        const candles = raw.map(k => ({
+          time: Math.floor(Number(k[0]) / 1000) + vnOffsetSec,
+          open: parseFloat(k[1]),
+          high: parseFloat(k[2]),
+          low: parseFloat(k[3]),
+          close: parseFloat(k[4]),
+        }));
+        const closes = candles.map(c => c.close);
+        const e34 = computeEmaSeries(closes, 34);
+        const e89 = computeEmaSeries(closes, 89);
+        const e200 = computeEmaSeries(closes, 200);
+
+        const sliceStart = Math.max(0, candles.length - 120);
+        cSlice = candles.slice(sliceStart);
+        e34Slice = cSlice.map((c, idx) => ({ time: c.time, value: e34[sliceStart + idx] }));
+        e89Slice = cSlice.map((c, idx) => ({ time: c.time, value: e89[sliceStart + idx] }));
+        e200Slice = cSlice.map((c, idx) => ({ time: c.time, value: e200[sliceStart + idx] }));
+      }
+
       const pos = findChartOpenPosition();
-      const entryTime = getChartEntryBarTime(pos);
-      const hasEntryInRange = Boolean(
-        pos && entryTime && cSlice.length > 0 && entryTime >= cSlice[0].time && entryTime <= cSlice[cSlice.length - 1].time
-      );
-      const styledSlice = hasEntryInRange
-        ? cSlice.map(c => (c.time === entryTime ? { ...c, color: '#2563EB', borderColor: '#1D4ED8', wickColor: '#2563EB' } : c))
-        : cSlice;
-      const e34Slice = cSlice.map((c, idx) => ({ time: c.time, value: e34[sliceStart + idx] }));
-      const e89Slice = cSlice.map((c, idx) => ({ time: c.time, value: e89[sliceStart + idx] }));
-      const e200Slice = cSlice.map((c, idx) => ({ time: c.time, value: e200[sliceStart + idx] }));
+      const rawEntryTime = getChartEntryBarTime(pos);
+      const matchedEntryTime = findNearestBarTime(cSlice, rawEntryTime);
 
       tvCandleSeries.applyOptions({ priceFormat: getCoinPriceFormat(chartCoin) });
-      tvCandleSeries.setData(styledSlice);
-      if (hasEntryInRange) {
+      // Keep original green/red candle colors (never recolor the entry candle)
+      tvCandleSeries.setData(cSlice);
+      if (pos && matchedEntryTime) {
         tvCandleSeries.setMarkers([{
-          time: entryTime,
+          time: matchedEntryTime,
           position: pos.direction === 'LONG' ? 'belowBar' : 'aboveBar',
-          color: '#10B981',
+          color: '#2563EB',
           shape: 'circle',
           text: 'ENTRY',
         }]);
-        chartEntryMarker = { time: entryTime, price: Number(pos.entry_price) };
+        chartEntryMarker = { time: matchedEntryTime, price: Number(pos.entry_price) };
       } else {
         tvCandleSeries.setMarkers([]);
         chartEntryMarker = null;
@@ -1794,20 +1856,20 @@
 
       tvChart.priceScale('right').applyOptions({ autoScale: true });
       tvChart.timeScale().setVisibleLogicalRange({
-        from: Math.max(0, cSlice.length - 95),
+        from: Math.max(0, cSlice.length - 75),
         to: cSlice.length + 6,
       });
 
       chartLastCandle = { ...cSlice[cSlice.length - 1] };
-      chartPrevEma34 = e34.length >= 2 ? e34[e34.length - 2] : chartLastCandle.close;
-      chartPrevEma89 = e89.length >= 2 ? e89[e89.length - 2] : chartLastCandle.close;
-      chartPrevEma200 = e200.length >= 2 ? e200[e200.length - 2] : chartLastCandle.close;
+      chartPrevEma34 = e34Slice.length >= 2 ? e34Slice[e34Slice.length - 2].value : chartLastCandle.close;
+      chartPrevEma89 = e89Slice.length >= 2 ? e89Slice[e89Slice.length - 2].value : chartLastCandle.close;
+      chartPrevEma200 = e200Slice.length >= 2 ? e200Slice[e200Slice.length - 2].value : chartLastCandle.close;
 
       updateChartLegend(
         chartLastCandle.close,
-        e34[e34.length - 1],
-        e89[e89.length - 1],
-        e200[e200.length - 1]
+        e34Slice[e34Slice.length - 1].value,
+        e89Slice[e89Slice.length - 1].value,
+        e200Slice[e200Slice.length - 1].value
       );
       syncChartPositionLines();
     } catch (err) {}
@@ -1835,16 +1897,26 @@
 
   async function loadDashboard(alsoPollPrice = false) {
     try {
-      const resp = await fetch(`data/live_dashboard.json?t=${Date.now()}`, { cache: 'no-store' });
-      dashData = await resp.json();
+      const ts = Date.now();
+      const [dashResp, chartResp] = await Promise.all([
+        fetch(`data/live_dashboard.json?t=${ts}`, { cache: 'no-store' }),
+        fetch(`data/chart_candles.json?t=${ts}`, { cache: 'no-store' }).catch(() => null),
+      ]);
+      dashData = await dashResp.json();
+      if (chartResp && chartResp.ok) {
+        try {
+          window.__CHART_CACHE = await chartResp.json();
+        } catch (e) {}
+      }
       document.getElementById('hdr-updated').innerHTML =
         `Cập nhật: <code>${dashData.updated_at_utc}</code> · 58 Setup <code>U3 4H</code>`;
       renderOverviewHero();
       renderOpenPositions();
       renderRatesCards();
       renderClosedTrades();
+      syncChartPills();
       if (activeTabId === 'tab-history') renderEquityChart();
-      if (activeTabId === 'tab-chart') syncChartPositionLines();
+      if (activeTabId === 'tab-chart') loadChartData();
       if (alsoPollPrice) pollBinancePrices();
     } catch (err) {
       document.getElementById('hdr-updated').textContent = 'Chưa tải được live_dashboard.json.';

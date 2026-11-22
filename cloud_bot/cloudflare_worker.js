@@ -7,14 +7,12 @@
  *      - BOT_TOKEN (Secret): Token Telegram Bot (@chicktrade_v3_bot)
  *      - BROADCAST_SECRET (Secret, tuy chon, mac dinh: chicktrade2026)
  *      - OWNER_CHAT_ID (Variable, tuy chon, mac dinh: 8742282902)
- * 3. Settings -> Bindings -> Add KV Namespace (dat ten bien: CHICKTRADE_KV) de luu ben vung subscribers & auto-delete.
- * 4. Settings -> Trigger Events -> Cron Triggers -> Them `* * * * *` (moi 1 phut) de tu dong xoa anh chart sau 2 phut.
- * 5. Goi URL setWebhook cua Telegram (hoac mo https://<worker>.workers.dev/set-webhook?secret=chicktrade2026) 1 lan duy nhat!
+ * 3. Settings -> Bindings -> Add KV Namespace (dat ten bien: CHICKTRADE_KV) de luu ben vung subscribers & reply-to-open.
+ * 4. Goi URL setWebhook cua Telegram (hoac mo https://<worker>.workers.dev/set-webhook?secret=chicktrade2026) 1 lan duy nhat!
  */
 
 const MEM_STORE = {
   subscribers: {},
-  pendingDeletes: [],
   openMsgs: {},
   dedup: new Map(),
 };
@@ -91,7 +89,9 @@ export default {
         String(payload.text || ''),
         String(payload.exclude_chat_id || cfg.OWNER_CHAT_ID || ''),
         String(payload.event_type || ''),
-        String(payload.pos_id || '')
+        String(payload.pos_id || ''),
+        String(payload.photo_base64 || ''),
+        String(payload.photo_filename || 'chart.png')
       );
       return jsonResponse(res, 200);
     }
@@ -113,18 +113,6 @@ export default {
     }
 
     return new Response('OK', { status: 200 });
-  },
-
-  async scheduled(_event, env, ctx) {
-    const cfg = getConfig(env);
-    const task = cleanupExpiredCharts(cfg).catch(err => {
-      console.error('Scheduled cleanup error:', err);
-    });
-    if (ctx && typeof ctx.waitUntil === 'function') {
-      ctx.waitUntil(task);
-    } else {
-      await task;
-    }
   },
 };
 
@@ -149,7 +137,7 @@ function isDuplicateUpdate(updateId) {
   return false;
 }
 
-// ---------- Subscriber & Pending-Delete Store (KV with Memory Fallback) ----------
+// ---------- Subscriber & Open-Message Store (KV with Memory Fallback) ----------
 
 async function getSubscribers(cfg) {
   if (cfg.KV) {
@@ -173,36 +161,6 @@ async function saveSubscribers(cfg, subs) {
       await cfg.KV.put('subscribers', JSON.stringify(subs));
     } catch (e) {
       console.error('KV saveSubscribers error:', e);
-    }
-  }
-}
-
-async function getPendingDeletes(cfg) {
-  if (cfg.KV) {
-    try {
-      const val = await cfg.KV.get('pending_deletes', { type: 'json' });
-      if (Array.isArray(val)) {
-        MEM_STORE.pendingDeletes = val;
-        return val;
-      }
-    } catch (e) {
-      console.error('KV getPendingDeletes error:', e);
-    }
-  }
-  return MEM_STORE.pendingDeletes;
-}
-
-async function savePendingDeletes(cfg, list) {
-  MEM_STORE.pendingDeletes = list;
-  if (cfg.KV) {
-    try {
-      if (list.length === 0) {
-        await cfg.KV.delete('pending_deletes');
-      } else {
-        await cfg.KV.put('pending_deletes', JSON.stringify(list));
-      }
-    } catch (e) {
-      console.error('KV savePendingDeletes error:', e);
     }
   }
 }
@@ -345,7 +303,24 @@ async function buildAdminUsersView(cfg) {
   };
 }
 
-async function broadcastToSubscribers(cfg, text, excludeChatId, eventType = '', posId = '') {
+function base64ToUint8Array(b64) {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) {
+    bytes[i] = bin.charCodeAt(i);
+  }
+  return bytes;
+}
+
+async function broadcastToSubscribers(
+  cfg,
+  text,
+  excludeChatId,
+  eventType = '',
+  posId = '',
+  photoBase64 = '',
+  photoFilename = 'chart.png'
+) {
   if (!text) return { ok: true, sent: 0, skipped: 0 };
   const subs = await getSubscribers(cfg);
   const ids = Object.keys(subs);
@@ -356,6 +331,14 @@ async function broadcastToSubscribers(cfg, text, excludeChatId, eventType = '', 
   const isFollowUp = Boolean(posId) && (eventType === 'TP1_HIT' || eventType === 'CLOSED');
   const openMap = isFollowUp ? await getOpenMsgMap(cfg, posId) : {};
   const newOpenMap = eventType === 'OPEN' && posId ? {} : null;
+  let pngBytes = null;
+  if (photoBase64) {
+    try {
+      pngBytes = base64ToUint8Array(photoBase64);
+    } catch {
+      pngBytes = null;
+    }
+  }
 
   for (const cid of ids) {
     const rec = subs[cid];
@@ -368,7 +351,15 @@ async function broadcastToSubscribers(cfg, text, excludeChatId, eventType = '', 
       continue;
     }
     const replyToMsgId = isFollowUp ? openMap[cid] || null : null;
-    const resp = await sendTelegram(cfg, cid, text, null, replyToMsgId);
+    let resp;
+    if (pngBytes && text.length <= 1020) {
+      resp = await sendPhoto(cfg, cid, pngBytes, photoFilename || 'chart.png', text, null, replyToMsgId);
+      if (!resp || !resp.ok) {
+        resp = await sendTelegram(cfg, cid, text, null, replyToMsgId);
+      }
+    } else {
+      resp = await sendTelegram(cfg, cid, text, null, replyToMsgId);
+    }
     if (resp && resp.ok) {
       sent += 1;
       if (newOpenMap && resp.result && resp.result.message_id) {
@@ -398,9 +389,6 @@ async function broadcastToSubscribers(cfg, text, excludeChatId, eventType = '', 
 // ---------- Update, Command & Callback Routing ----------
 
 async function handleTelegramUpdate(cfg, env, ctx, payload) {
-  // Opportunistically clean expired charts on any webhook traffic as backup to cron
-  await cleanupExpiredCharts(cfg);
-
   if (payload && payload.message && payload.message.text) {
     await handleMessage(cfg, ctx, payload.message);
   } else if (payload && payload.callback_query) {
@@ -479,7 +467,7 @@ async function handleMessage(cfg, ctx, msg) {
       '• /status — Tài sản, Bậc S2 &amp; Phanh 2-SL\n' +
       '• /orders — Lệnh đang mở &amp; Dự kiến Win/Loss $\n' +
       '• /1u — Bảng tỷ lệ 1U % 6 Coin (15m/30m/1h)\n' +
-      '• /chart — Gửi ảnh biểu đồ nến + EMA 34/89/200 (tự xóa sau 2 phút)\n' +
+      '• /chart — Gửi ảnh biểu đồ nến + EMA 34/89/200 (kèm Entry/TP/SL nếu có lệnh)\n' +
       '• /stats — Hiệu suất Profit WR, PF &amp; 5 lệnh gần nhất\n' +
       '• /mute | /subscribe — Tạm tắt / Bật lại thông báo tự động';
     await sendTelegram(cfg, chatId, welcome, buildReplyKeyboard(cfg, chatId));
@@ -575,12 +563,14 @@ async function handleCallback(cfg, ctx, cb) {
     const dash = await fetchDashboard(cfg);
     await sendTelegram(cfg, chatId, formatStatsText(dash));
   } else if (data === 'chart_back') {
+    const dash = await fetchDashboard(cfg).catch(() => null);
+    const openPos = dash && Array.isArray(dash.open_positions) ? dash.open_positions : [];
     await editMessageText(
       cfg,
       chatId,
       msgId,
       '🕯️ <b>XEM BIỂU ĐỒ NẾN + EMA 34/89/200 LIVE</b>\nChọn đồng Coin muốn xem:',
-      buildChartCoinKeyboard()
+      buildChartCoinKeyboard(openPos)
     );
   } else if (data.startsWith('chart_coin_')) {
     const sym = data.replace('chart_coin_', '');
@@ -594,7 +584,7 @@ async function handleCallback(cfg, ctx, cb) {
   } else if (data.startsWith('chart_go_')) {
     const parts = data.replace('chart_go_', '').split('_');
     if (parts.length === 2) {
-      await sendChartPhotoWithAutoDelete(cfg, ctx, chatId, msgId, parts[0], parts[1]);
+      await sendChartPhoto(cfg, chatId, msgId, parts[0], parts[1]);
     }
   }
 }
@@ -661,25 +651,23 @@ function formatOrdersText(d) {
   const open = d.open_positions || [];
   let out = `📂 <b>LỆNH ĐANG MỞ (${open.length}/5)</b>\n`;
   if (open.length === 0) {
-    return out + '<i>Hiện không có lệnh đang mở — hệ thống đang canh tín hiệu 24/7.</i>';
+    return out + '<i>Hiện không có lệnh mở — hệ thống đang canh 24/7.</i>';
   }
   open.forEach((p, idx) => {
     const totPnl = Number(p.realized_pnl_usd || 0) + Number(p.unrealized_pnl_usd || 0);
     const dirIc = p.direction === 'LONG' ? '🟢' : '🔴';
-    const mustTag = p.is_must_order ? ' 🔥<b>THẤY LÀ QUẤT</b>' : '';
+    const mustTag = p.is_must_order ? ' 🔥' : '';
     const wrLive = Number(p.setup_live_wr_pct != null ? p.setup_live_wr_pct : p.wr_pct || 0).toFixed(1);
     const pwrLive = Number(
       p.setup_live_profit_wr_pct != null ? p.setup_live_profit_wr_pct : p.profit_wr_pct || 0
     ).toFixed(1);
-    const samples = p.setup_total_samples != null ? ` (${p.setup_total_samples} lệnh)` : '';
 
     out +=
       (idx > 0 ? '\n' : '') +
-      `${dirIc} <b>${p.symbol} · ${String(p.tf || '').toUpperCase()} [${p.setup_code}]</b> ${p.direction}${mustTag}\n` +
-      `• Entry <code>${fmtPx(p.entry_price)}</code> → Live <code>${fmtPx(p.current_price)}</code> | PnL: <b>${fmtUsd(totPnl, true)}</b>\n` +
-      `• SL <code>${fmtPx(p.active_sl_price)}</code> · TP1 <code>${fmtPx(p.tp1_price)}</code> · TP2 <code>${fmtPx(p.tp2_price)}</code>\n` +
-      `• Dự kiến Win: <b>${fmtUsd(p.expected_tp1_usd || 0, true)} / ${fmtUsd(p.expected_tp2_usd || 0, true)}</b> | Thua SL: <b>${fmtUsd(p.expected_sl_usd || 0, true)}</b> (${Number(p.expected_sl_eq_pct || 0).toFixed(2)}%)\n` +
-      `• WR (3Y+Live): <b>${wrLive}%</b> · Thắng tiền: <b>${pwrLive}%</b>${samples}\n`;
+      `${dirIc} <b>${p.symbol} · ${String(p.tf || '').toUpperCase()} [${p.setup_code}]</b> ${p.direction}${mustTag} | PnL: <b>${fmtUsd(totPnl, true)}</b>\n` +
+      `• Entry <code>${fmtPx(p.entry_price)}</code> → Live <code>${fmtPx(p.current_price)}</code> · SL <code>${fmtPx(p.active_sl_price)}</code>\n` +
+      `• TP1 <code>${fmtPx(p.tp1_price)}</code> · TP2 <code>${fmtPx(p.tp2_price)}</code> | Win <b>${fmtUsd(p.expected_tp1_usd || 0, true)}/${fmtUsd(p.expected_tp2_usd || 0, true)}</b> · SL <b>${fmtUsd(p.expected_sl_usd || 0, true)}</b>\n` +
+      `• WR (3Y+Live): <b>${wrLive}%</b> · Thắng tiền: <b>${pwrLive}%</b>\n`;
   });
   return out;
 }
@@ -832,21 +820,24 @@ async function answerCallback(cfg, callbackId) {
   return await tgApi(cfg, 'answerCallbackQuery', { callback_query_id: callbackId });
 }
 
-// ---------- QuickChart Live Candlestick + EMA 34/89/200 + 2-Min Auto-Delete ----------
+// ---------- QuickChart Live Candlestick + EMA 34/89/200 (Permanent Archive) ----------
 
-function buildChartCoinKeyboard() {
+function buildChartCoinKeyboard(openPositions = []) {
+  const openBySym = {};
+  for (const p of openPositions || []) {
+    if (p && p.symbol) openBySym[p.symbol] = p;
+  }
+  const mkBtn = (sym, shortName) => {
+    const pos = openBySym[sym];
+    const label = pos
+      ? `${pos.direction === 'LONG' ? '🟢' : '🔴'} ${shortName} (${String(pos.tf || '').toUpperCase()})`
+      : shortName;
+    return { text: label, callback_data: `chart_coin_${sym}` };
+  };
   return {
     inline_keyboard: [
-      [
-        { text: 'BTC', callback_data: 'chart_coin_BTCUSDT' },
-        { text: 'ETH', callback_data: 'chart_coin_ETHUSDT' },
-        { text: 'BNB', callback_data: 'chart_coin_BNBUSDT' },
-      ],
-      [
-        { text: 'LINK', callback_data: 'chart_coin_LINKUSDT' },
-        { text: 'XRP', callback_data: 'chart_coin_XRPUSDT' },
-        { text: 'SOL', callback_data: 'chart_coin_SOLUSDT' },
-      ],
+      [mkBtn('BTCUSDT', 'BTC'), mkBtn('ETHUSDT', 'ETH'), mkBtn('BNBUSDT', 'BNB')],
+      [mkBtn('LINKUSDT', 'LINK'), mkBtn('XRPUSDT', 'XRP'), mkBtn('SOLUSDT', 'SOL')],
     ],
   };
 }
@@ -866,11 +857,13 @@ function buildChartTfKeyboard(sym) {
 }
 
 async function sendChartCoinPicker(cfg, chatId) {
+  const dash = await fetchDashboard(cfg).catch(() => null);
+  const openPos = dash && Array.isArray(dash.open_positions) ? dash.open_positions : [];
   await sendTelegram(
     cfg,
     chatId,
     '🕯️ <b>XEM BIỂU ĐỒ NẾN + EMA 34/89/200 LIVE</b>\nChọn đồng Coin muốn xem:',
-    buildChartCoinKeyboard()
+    buildChartCoinKeyboard(openPos)
   );
 }
 
@@ -982,7 +975,7 @@ function pad2(n) {
   return (n < 10 ? '0' : '') + n;
 }
 
-async function sendChartPhotoWithAutoDelete(cfg, ctx, chatId, pickerMsgId, sym, tf) {
+async function sendChartPhoto(cfg, chatId, pickerMsgId, sym, tf) {
   try {
     await editMessageText(cfg, chatId, pickerMsgId, `⏳ Đang tải nến &amp; vẽ biểu đồ <b>${sym} (${tf})</b>...`);
 
@@ -1062,9 +1055,15 @@ async function sendChartPhotoWithAutoDelete(cfg, ctx, chatId, pickerMsgId, sym, 
           }
         }
       }
-      if (entryIdx >= 0) {
-        yMin = Math.min(yMin, Number(pos.entry_price));
-        yMax = Math.max(yMax, Number(pos.entry_price));
+      const lvls = [
+        Number(pos.entry_price),
+        Number(pos.active_sl_price),
+        Number(pos.tp1_price),
+        Number(pos.tp2_price),
+      ].filter(v => isFinite(v) && v > 0);
+      for (const lv of lvls) {
+        yMin = Math.min(yMin, lv);
+        yMax = Math.max(yMax, lv);
       }
     }
 
@@ -1086,7 +1085,8 @@ async function sendChartPhotoWithAutoDelete(cfg, ctx, chatId, pickerMsgId, sym, 
       } else {
         bodies.push([Math.min(b.o, b.c), Math.max(b.o, b.c)]);
       }
-      colors.push(i === entryIdx ? '#2563EB' : isUp ? '#059669' : '#DC2626');
+      // Keep original green/red candle colors (never recolor the entry candle)
+      colors.push(isUp ? '#059669' : '#DC2626');
       e34Show.push(b.e34);
       e89Show.push(b.e89);
       e200Show.push(b.e200);
@@ -1153,6 +1153,29 @@ async function sendChartPhotoWithAutoDelete(cfg, ctx, chatId, pickerMsgId, sym, 
       },
     ];
 
+    if (pos) {
+      const addHLine = (label, price, color, dashed) => {
+        const p = Number(price);
+        if (!isFinite(p) || p <= 0) return;
+        const ds = {
+          type: 'line',
+          label,
+          data: Array(nShow).fill(p),
+          borderColor: color,
+          borderWidth: dashed ? 1.6 : 2,
+          pointRadius: 0,
+          fill: false,
+          order: 0,
+        };
+        if (dashed) ds.borderDash = [6, 4];
+        datasets.push(ds);
+      };
+      addHLine(`Entry ${fmtPx(pos.entry_price)}`, pos.entry_price, '#2563EB', true);
+      addHLine(`SL ${fmtPx(pos.active_sl_price)}`, pos.active_sl_price, '#DC2626', false);
+      addHLine(`TP1 ${fmtPx(pos.tp1_price)}`, pos.tp1_price, '#059669', true);
+      addHLine(`TP2 ${fmtPx(pos.tp2_price)}`, pos.tp2_price, '#15803D', false);
+    }
+
     if (entryIdx >= 0 && pos) {
       const entryDotData = Array(nShow).fill(null);
       entryDotData[entryIdx] = Number(pos.entry_price);
@@ -1162,7 +1185,7 @@ async function sendChartPhotoWithAutoDelete(cfg, ctx, chatId, pickerMsgId, sym, 
         data: entryDotData,
         showLine: false,
         pointRadius: 7,
-        pointBackgroundColor: '#10B981',
+        pointBackgroundColor: '#2563EB',
         pointBorderColor: '#FFFFFF',
         pointBorderWidth: 2,
         order: 0,
@@ -1176,7 +1199,7 @@ async function sendChartPhotoWithAutoDelete(cfg, ctx, chatId, pickerMsgId, sym, 
         plugins: {
           title: {
             display: true,
-            text: `${sym} · ${tf.toUpperCase()} (${nShow} nến gần nhất · EMA 34/89/200)`,
+            text: `${sym} · ${tf.toUpperCase()} (${nShow} nến · EMA 34/89/200${pos ? ` · ${pos.direction} ${pos.setup_code}` : ''})`,
             color: '#0F172A',
             font: { size: 14, weight: 'bold' },
           },
@@ -1184,7 +1207,8 @@ async function sendChartPhotoWithAutoDelete(cfg, ctx, chatId, pickerMsgId, sym, 
             display: true,
             labels: {
               color: '#334155',
-              filter: item => item.text.startsWith('EMA') || item.text === 'Entry Point',
+              font: { size: 11 },
+              filter: item => item.text !== 'Wick' && item.text !== 'Candle',
             },
           },
         },
@@ -1221,22 +1245,34 @@ async function sendChartPhotoWithAutoDelete(cfg, ctx, chatId, pickerMsgId, sym, 
     }
     const pngBuf = await qcRes.arrayBuffer();
 
-    const caption =
+    let caption =
       `🕯️ <b>${sym} · ${tf.toUpperCase()}</b> · Giá Live: <b>${fmtPx(lastPx)}</b>\n` +
-      `• EMA34: <code>${fmtPx(lastE34)}</code> · EMA89: <code>${fmtPx(lastE89)}</code> · EMA200: <code>${fmtPx(lastE200)}</code>\n` +
-      '⏱️ <i>Ảnh tự xóa sau 2 phút để giữ nhóm sạch sẽ</i>';
+      `• EMA34: <code>${fmtPx(lastE34)}</code> · EMA89: <code>${fmtPx(lastE89)}</code> · EMA200: <code>${fmtPx(lastE200)}</code>`;
 
-    const sent = await sendPhoto(cfg, chatId, pngBuf, `${sym}_${tf}.png`, caption, null);
-    await deleteMessage(cfg, chatId, pickerMsgId);
-    if (sent && sent.ok && sent.result && sent.result.message_id) {
-      await scheduleChartDelete(cfg, ctx, chatId, sent.result.message_id, 120000);
+    if (pos) {
+      const totPnl = Number(pos.realized_pnl_usd || 0) + Number(pos.unrealized_pnl_usd || 0);
+      const dirIc = pos.direction === 'LONG' ? '🟢' : '🔴';
+      const wrLive = Number(pos.setup_live_wr_pct != null ? pos.setup_live_wr_pct : pos.wr_pct || 0).toFixed(1);
+      const pwrLive = Number(
+        pos.setup_live_profit_wr_pct != null ? pos.setup_live_profit_wr_pct : pos.profit_wr_pct || 0
+      ).toFixed(1);
+      const samples = pos.setup_total_samples != null ? ` (${pos.setup_total_samples} lệnh)` : '';
+      caption +=
+        `\n\n${dirIc} <b>LỆNH ĐANG MỞ: ${pos.symbol} · ${String(pos.tf || '').toUpperCase()} [${pos.setup_code}] ${pos.direction}</b>\n` +
+        `• Entry: <code>${fmtPx(pos.entry_price)}</code> | PnL Live: <b>${fmtUsd(totPnl, true)}</b>\n` +
+        `• SL: <code>${fmtPx(pos.active_sl_price)}</code> · TP1: <code>${fmtPx(pos.tp1_price)}</code> · TP2: <code>${fmtPx(pos.tp2_price)}</code>\n` +
+        `• Dự kiến Win: <b>${fmtUsd(pos.expected_tp1_usd || 0, true)} / ${fmtUsd(pos.expected_tp2_usd || 0, true)}</b> | Thua SL: <b>${fmtUsd(pos.expected_sl_usd || 0, true)}</b>\n` +
+        `• WR (3Y+Live): <b>${wrLive}%</b> · Thắng tiền: <b>${pwrLive}%</b>${samples}`;
     }
+
+    await sendPhoto(cfg, chatId, pngBuf, `${sym}_${tf}.png`, caption, null);
+    await deleteMessage(cfg, chatId, pickerMsgId);
   } catch (err) {
     await editMessageText(cfg, chatId, pickerMsgId, `⚠️ Không thể vẽ biểu đồ lúc này: ${escapeHtml(String(err))}`);
   }
 }
 
-async function sendPhoto(cfg, chatId, pngBuffer, filename, caption, replyMarkup) {
+async function sendPhoto(cfg, chatId, pngBuffer, filename, caption, replyMarkup = null, replyToMessageId = null) {
   const form = new FormData();
   form.append('chat_id', String(chatId));
   form.append('photo', new Blob([pngBuffer], { type: 'image/png' }), filename);
@@ -1245,45 +1281,13 @@ async function sendPhoto(cfg, chatId, pngBuffer, filename, caption, replyMarkup)
   if (replyMarkup) {
     form.append('reply_markup', JSON.stringify(replyMarkup));
   }
+  if (replyToMessageId) {
+    form.append('reply_to_message_id', String(replyToMessageId));
+    form.append('allow_sending_without_reply', 'true');
+  }
   const res = await fetch(`https://api.telegram.org/bot${cfg.BOT_TOKEN}/sendPhoto`, {
     method: 'POST',
     body: form,
   });
   return await res.json();
-}
-
-async function scheduleChartDelete(cfg, ctx, chatId, messageId, delayMs = 120000) {
-  const list = await getPendingDeletes(cfg);
-  list.push({
-    chat_id: String(chatId),
-    message_id: Number(messageId),
-    delete_at: Date.now() + Number(delayMs),
-  });
-  await savePendingDeletes(cfg, list);
-
-  if (!cfg.KV && ctx && typeof ctx.waitUntil === 'function') {
-    ctx.waitUntil(
-      new Promise(resolve => setTimeout(resolve, Number(delayMs))).then(() => cleanupExpiredCharts(cfg))
-    );
-  }
-}
-
-async function cleanupExpiredCharts(cfg) {
-  const list = await getPendingDeletes(cfg);
-  if (!list.length) return;
-  const now = Date.now();
-  const remaining = [];
-  let changed = false;
-
-  for (const item of list) {
-    if (Number(item.delete_at) <= now + 5000) {
-      await deleteMessage(cfg, item.chat_id, item.message_id);
-      changed = true;
-    } else {
-      remaining.push(item);
-    }
-  }
-  if (changed) {
-    await savePendingDeletes(cfg, remaining);
-  }
 }
