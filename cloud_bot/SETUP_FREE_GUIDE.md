@@ -1,48 +1,49 @@
-# Hướng Dẫn Triển Khai CHICKTRADE v3.0 Paper-Test $10,000 ($0/Tháng · 5 Phút Xong)
+# Hướng Dẫn Clone & Triển Khai CHICKTRADE v3.3 ($0/Tháng · 5 Phút Xong)
 
-Kiến trúc miễn phí 100%:
-- **GitHub Actions (Cron 15 phút):** Chạy `cloud_bot/paper_engine_v3.py`, kéo nến Binance Futures realtime, cập nhật `docs/data/live_dashboard.json` và bắn thông báo Telegram khi có lệnh.
-- **GitHub Pages (`docs/index.html`):** Giao diện Telegram Mini App Popup + Web Dashboard (tự gọi giá Binance Futures mỗi **5 giây** để nhảy PnL nổi & hiển thị bảng `1U / SL / TP1 / TP2 / Dời SL (%)` kèm mũi tên `▲ / ▼`).
-- **Google Apps Script (`cloud_bot/telegram_gas_webhook.gs`):** Bot Webhook 24/7 để bạn bè tự gõ `/start`, `/menu`, `/status`, `/orders`, `/1u` và mở Mini App ngay trong Telegram (+ tùy chọn ghi sang Google Sheets).
+Kiến trúc miễn phí 100% — **không chứa bất kỳ khóa bí mật (token/secret) nào trong mã nguồn**:
+- **GitHub Actions (Cron 15 phút):** Chạy `cloud_bot/paper_engine_v3.py`, kéo nến Binance Futures realtime, xuất `docs/data/live_dashboard.json` + `docs/data/chart_candles.json` và bắn thông báo mở/đóng lệnh (kèm ảnh Chart PNG khi mở lệnh, tự Reply khi chạm TP1/đóng lệnh).
+- **GitHub Pages (`docs/index.html`):** Giao diện Telegram Mini App Popup + Web Dashboard (cache RAM `chart_candles.json` vẽ tức thì `0ms`, ticker Binance Futures 5 giây nhảy PnL nổi & bảng `1U / SL / TP1 / TP2 (%)`).
+- **Cloudflare Workers (`cloud_bot/cloudflare_worker.js`):** Bot Telegram Webhook `HTTP 200 OK` phản hồi `< 0.2s` (miễn phí 100,000 req/ngày) cho `/start`, `/status`, `/orders`, `/1u`, `/chart`, `/stats`, `/mute`, `/subscribe` và quản trị `/admin`, `/ban`, `/unban`.
 
 ---
 
 ## Bước 1: Tạo Bot Telegram với `@BotFather` (1 phút)
-1. Mở Telegram, chat với `@BotFather` → gõ `/newbot`, đặt tên & username (ví dụ `chicktrade_v3_paper_bot`).
+1. Mở Telegram, chat với `@BotFather` → gõ `/newbot`, đặt tên & username cho bot của bạn.
 2. Lưu lại **Bot Token** (dạng `123456789:AAH...`).
-3. Thêm Bot vào **nhóm Telegram của bạn & bạn bè**, nhắn 1 tin bất kỳ rồi mở `https://api.telegram.org/bot<BOT_TOKEN>/getUpdates` để lấy `chat.id` của nhóm (thường là số âm `-100...`).
+3. Lấy **Chat ID** của bạn (hoặc nhóm nhận lệnh) bằng cách nhắn `/start` cho `@userinfobot` hoặc gọi `https://api.telegram.org/bot<BOT_TOKEN>/getUpdates`.
 
-## Bước 2: Đẩy lên GitHub & Bật GitHub Pages (2 phút)
-1. Push repository lên GitHub (nếu dùng Public repo thì GitHub Actions & Pages **miễn phí không giới hạn**).
+## Bước 2: Fork / Clone Repo & Bật GitHub Pages (1 phút)
+1. Fork hoặc clone repo này lên tài khoản GitHub của bạn (Public repo giúp GitHub Actions & Pages miễn phí không giới hạn).
 2. Vào **Settings → Pages**:
    - **Source:** `Deploy from a branch`
-   - **Branch:** `main` · Folder: `/docs` → nhấn **Save**.
-3. Sau ~1 phút, link Web/Mini App của bạn sẽ có dạng:
+   - **Branch:** `master` (hoặc `main`) · Folder: `/docs` → bấm **Save**.
+3. Link Web / Mini App của bạn sẽ có dạng:
    `https://<TEN_GITHUB>.github.io/<TEN_REPO>/`
 
-## Bước 3: Thêm Secrets & Variables cho GitHub Actions (1 phút)
-Vào **Settings → Secrets and variables → Actions**:
-- Tab **Secrets** → *New repository secret*:
-  - `TELEGRAM_BOT_TOKEN`: Token từ BotFather
-  - `TELEGRAM_CHAT_ID`: ID nhóm Telegram nhận thông báo
-- Tab **Variables** → *New repository variable*:
+## Bước 3: Triển Khai Telegram Bot Trên Cloudflare Workers (2 phút)
+1. Đăng nhập [Cloudflare Dashboard](https://dash.cloudflare.com/) → **Workers & Pages → Create Worker** → đặt tên (ví dụ `chicktrade-bot`).
+2. Bấm **Edit code**, dán toàn bộ nội dung file `cloud_bot/cloudflare_worker.js` → bấm **Deploy**.
+3. Vào **Settings → Variables and Secrets** của Worker, thêm:
+   - `BOT_TOKEN` *(Secret)*: Bot Token từ `@BotFather`
+   - `BROADCAST_SECRET` *(Secret)*: Chuỗi mật khẩu bất kỳ tự đặt (dùng để xác thực broadcast từ GitHub Actions)
+   - `OWNER_CHAT_ID` *(Variable)*: Chat ID Telegram của bạn (Admin dùng `/admin`, `/ban`, `/unban`)
+   - `DASHBOARD_JSON_URL` *(Variable)*: `https://<TEN_GITHUB>.github.io/<TEN_REPO>/data/live_dashboard.json`
+   - `CHART_CANDLES_JSON_URL` *(Variable)*: `https://<TEN_GITHUB>.github.io/<TEN_REPO>/data/chart_candles.json`
+   - `WEBAPP_URL` *(Variable)*: `https://<TEN_GITHUB>.github.io/<TEN_REPO>/`
+4. *(Khuyên dùng)* Vào **Settings → Bindings → Add KV Namespace** đặt tên biến `CHICKTRADE_KV` để lưu bền vững danh sách người đăng ký & liên kết Reply-to-Open.
+5. Kích hoạt Webhook 1 lần duy nhất bằng cách mở link trên trình duyệt:
+   `https://<TEN_WORKER>.workers.dev/set-webhook?secret=<BROADCAST_SECRET>`
+   → Thấy `{"ok":true,...}` là thành công!
+
+## Bước 4: Thêm Secrets & Variables cho GitHub Actions (1 phút)
+Vào repo GitHub của bạn → **Settings → Secrets and variables → Actions**:
+- Tab **Secrets** (*New repository secret*):
+  - `TELEGRAM_BOT_TOKEN`: Bot Token từ `@BotFather`
+  - `TELEGRAM_CHAT_ID`: Chat ID nhận thông báo chính
+  - `GAS_BROADCAST_SECRET`: Giống hệt `BROADCAST_SECRET` đã đặt ở Cloudflare Worker
+- Tab **Variables** (*New repository variable*):
+  - `GAS_BROADCAST_URL`: `https://<TEN_WORKER>.workers.dev/`
   - `WEBAPP_URL`: `https://<TEN_GITHUB>.github.io/<TEN_REPO>/`
   - `TURBO_ENABLED`: `0` (mặc định Bao 400G an toàn) hoặc `1` (bật Auto-Turbo 250G)
 
-Vào tab **Actions → CHICKTRADE v3.0 Free Paper Bot → Run workflow** để kiểm tra chạy tay lần đầu.
-
-## Bước 4: Cài Google Apps Script làm Bot Tương Tác 24/7 + Google Sheets (1 phút)
-1. Mở Google Sheets mới (hoặc vào thẳng `https://script.google.com/` → **New project**).
-2. Dán toàn bộ nội dung file `cloud_bot/telegram_gas_webhook.gs` vào `Code.gs`.
-3. Điền 3 dòng trong `CONFIG` (hoặc vào *Project Settings → Script Properties*):
-   - `BOT_TOKEN`
-   - `DASHBOARD_JSON_URL`: `https://<TEN_GITHUB>.github.io/<TEN_REPO>/data/live_dashboard.json`
-   - `WEBAPP_URL`: `https://<TEN_GITHUB>.github.io/<TEN_REPO>/`
-4. Bấm **Deploy → New deployment**:
-   - Type: **Web app**
-   - Execute as: **Me**
-   - Who has access: **Anyone** → bấm **Deploy** & cấp quyền.
-5. Chọn hàm **`setWebhook`** trên thanh công cụ và bấm **Run** 1 lần duy nhất (`{"ok":true,"result":true}`).
-6. *(Tùy chọn Google Sheets)*: Vào **Triggers → Add Trigger** cho hàm `syncHistoryToSheet` chạy mỗi 15 phút để tự lưu lịch sử lệnh sang Google Sheets.
-
-Xong! Gửi `/start` hoặc `/menu` trong Telegram để bạn bè cùng xem Dashboard Live 5 giây & bảng tỷ lệ `1U / SL / TP1 / TP2 (%)`!
+Vào tab **Actions → CHICKTRADE v3.0 Free Paper Bot → Run workflow** để chạy thử lần đầu. Xong! Mở Telegram gõ `/start` để dùng ngay.

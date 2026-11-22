@@ -4,11 +4,14 @@
  * Cach cai dat nhanh tren Cloudflare Dashboard (100,000 req/ngay mien phi, HTTP 200 OK < 0.2s):
  * 1. Workers & Pages -> Create Worker -> Dan toan bo file nay vao -> Deploy.
  * 2. Settings -> Variables and Secrets -> Them:
- *      - BOT_TOKEN (Secret): Token Telegram Bot (@chicktrade_v3_bot)
- *      - BROADCAST_SECRET (Secret, tuy chon, mac dinh: chicktrade2026)
- *      - OWNER_CHAT_ID (Variable, tuy chon, mac dinh: 8742282902)
+ *      - BOT_TOKEN (Secret): Token Telegram Bot (lay tu @BotFather)
+ *      - BROADCAST_SECRET (Secret): Chuoi bi mat tu chon (khop voi GitHub Secret GAS_BROADCAST_SECRET)
+ *      - OWNER_CHAT_ID (Variable): Chat ID Telegram cua Admin (de dung /admin, /ban, /unban)
+ *      - DASHBOARD_JSON_URL (Variable): https://<GITHUB_USER>.github.io/<REPO>/data/live_dashboard.json
+ *      - CHART_CANDLES_JSON_URL (Variable): https://<GITHUB_USER>.github.io/<REPO>/data/chart_candles.json
+ *      - WEBAPP_URL (Variable): https://<GITHUB_USER>.github.io/<REPO>/
  * 3. Settings -> Bindings -> Add KV Namespace (dat ten bien: CHICKTRADE_KV) de luu ben vung subscribers & reply-to-open.
- * 4. Goi URL setWebhook cua Telegram (hoac mo https://<worker>.workers.dev/set-webhook?secret=chicktrade2026) 1 lan duy nhat!
+ * 4. Goi URL setWebhook cua Telegram (hoac mo https://<worker>.workers.dev/set-webhook?secret=<BROADCAST_SECRET>) 1 lan duy nhat!
  */
 
 const MEM_STORE = {
@@ -21,15 +24,15 @@ function getConfig(env) {
   const e = env || {};
   return {
     BOT_TOKEN: String(e.BOT_TOKEN || '').trim(),
-    BROADCAST_SECRET: String(e.BROADCAST_SECRET || 'chicktrade2026').trim(),
-    OWNER_CHAT_ID: String(e.OWNER_CHAT_ID || '8742282902').trim(),
+    BROADCAST_SECRET: String(e.BROADCAST_SECRET || '').trim(),
+    OWNER_CHAT_ID: String(e.OWNER_CHAT_ID || '').trim(),
     DASHBOARD_JSON_URL: String(
-      e.DASHBOARD_JSON_URL || 'https://giltpinktee.github.io/chicktrade-live/data/live_dashboard.json'
+      e.DASHBOARD_JSON_URL || 'https://<YOUR_GITHUB_USER>.github.io/<YOUR_REPO>/data/live_dashboard.json'
     ).trim(),
     CHART_CANDLES_JSON_URL: String(
-      e.CHART_CANDLES_JSON_URL || 'https://giltpinktee.github.io/chicktrade-live/data/chart_candles.json'
+      e.CHART_CANDLES_JSON_URL || 'https://<YOUR_GITHUB_USER>.github.io/<YOUR_REPO>/data/chart_candles.json'
     ).trim(),
-    WEBAPP_URL: String(e.WEBAPP_URL || 'https://giltpinktee.github.io/chicktrade-live/').trim(),
+    WEBAPP_URL: String(e.WEBAPP_URL || 'https://<YOUR_GITHUB_USER>.github.io/<YOUR_REPO>/').trim(),
     KV: e.CHICKTRADE_KV || null,
   };
 }
