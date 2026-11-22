@@ -1,9 +1,9 @@
-"""Build CHICKTRADE v2.3 Master HTML Report — Deep Slate-Navy Fintech Edition (75 Active Setups, Profit WR + 4-Branch %, Interactive 20-Step Calculator, Zero Horizontal Scrollbar).
+"""Build CHICKTRADE v3.0 Master HTML Report — Light Mode Fintech Edition (58 Active Setups, U3_HTF_MACRO_ATR, Profit WR + 4-Branch %, Interactive 20-Step Calculator, Zero Horizontal Scrollbar).
 
 Strictly writes ONLY to:
   - e:\CHICKTRADE\core\reports\chicktrade_6coin_master_report.html
 Reads from:
-  - e:\CHICKTRADE\core\core_strategy_rules.json (v2.3-final-75setups-rog25)
+  - e:\CHICKTRADE\core\core_strategy_rules.json (v3.0-u3-htf-macro-4h)
   - e:\CHICKTRADE\coins\<SYMBOL>\audit_48.csv
   - e:\CHICKTRADE\coins\<SYMBOL>\data\<SYMBOL>_5m_1y.csv.gz
 """
@@ -11,6 +11,7 @@ import json
 import os
 from typing import Dict, List, Tuple
 
+import numpy as np
 import pandas as pd
 
 CORE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -185,8 +186,8 @@ def format_short_setup_code(setup_code: str) -> Tuple[str, str]:
     return short_code, desc_map.get(w_num, f"Chạm {w_num}")
 
 
-def compute_1u_usd_reference_table() -> pd.DataFrame:
-    """Compute 30-day median 1U = 0.5 * ATR(14) across 6 coins and active timeframes (15m/30m/1h + 5m for LINK)
+def compute_1u_usd_reference_table(unit_cfg: dict = None) -> pd.DataFrame:
+    """Compute 30-day median 1U under U3_HTF_MACRO_ATR across 6 coins and active timeframes (15m/30m/1h)
     for a $10,000 account at Bao 400G (1.00x base volume -> 1U = $25.00 USD risk unit).
     """
     rows = []
@@ -194,10 +195,18 @@ def compute_1u_usd_reference_table() -> pd.DataFrame:
     buf_g = 400.0
     usd_per_1u = base_cap / buf_g  # $25.00 per 1U at 1.00x Volume
 
-    tf_resample_map = {"5m": None, "15m": "15min", "30m": "30min", "1h": "1h"}
+    uc = unit_cfg or {}
+    gamma_map = uc.get("gamma_tf", {"5m": 0.17, "15m": 0.29, "30m": 0.41, "1h": 0.59})
+    min_u_pct = float(uc.get("min_u_pct", 0.0008))
+    ema_smooth = int(uc.get("ema_smooth", 20))
+    atr_period = int(uc.get("atr_period", 14))
+
+    tf_resample_map = {"15m": "15min", "30m": "30min", "1h": "1h"}
 
     for sym in SIX_COINS:
         gz_path = os.path.join(ROOT, "coins", sym, "data", f"{sym}_5m_1y.csv.gz")
+        if not os.path.exists(gz_path):
+            gz_path = os.path.join(ROOT, "data", "cache", f"{sym}_futures_5m_202610_12m.csv.gz")
         if not os.path.exists(gz_path):
             continue
         df5 = pd.read_csv(gz_path)
@@ -208,27 +217,37 @@ def compute_1u_usd_reference_table() -> pd.DataFrame:
         cutoff_30d = df5["timestamp"].max() - pd.Timedelta(days=30)
         sub5 = df5[df5["timestamp"] >= cutoff_45d].copy()
 
-        tfs_to_calc = ["5m", "15m", "30m", "1h"] if sym == "LINKUSDT" else ["15m", "30m", "1h"]
-        tf_stats = {}
+        # 4H macro ATR percentage (closed 4H bar shifted by +1 for zero lookahead)
+        d4 = (
+            sub5.set_index("timestamp")
+            .resample("4h")
+            .agg({"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"})
+            .dropna()
+            .reset_index()
+        )
+        tr4 = pd.concat(
+            [d4["high"] - d4["low"], (d4["high"] - d4["close"].shift(1)).abs(), (d4["low"] - d4["close"].shift(1)).abs()],
+            axis=1,
+        ).max(axis=1)
+        atr4 = tr4.ewm(alpha=1.0 / atr_period, adjust=False).mean()
+        macro_4h = ((0.5 * atr4) / d4["close"]).ewm(span=ema_smooth, adjust=False).mean().shift(1)
+        h4_ref = pd.DataFrame({"timestamp": d4["timestamp"], "macro_pct_4h": macro_4h}).sort_values("timestamp")
 
-        for tfl in tfs_to_calc:
+        tf_stats = {}
+        for tfl in ["15m", "30m", "1h"]:
             rule_str = tf_resample_map[tfl]
-            if rule_str is None:
-                d = sub5.copy()
-            else:
-                d = (
-                    sub5.set_index("timestamp")
-                    .resample(rule_str)
-                    .agg({"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"})
-                    .dropna()
-                    .reset_index()
-                )
-            high = d["high"]
-            low = d["low"]
-            close = d["close"]
-            tr = pd.concat([high - low, (high - close.shift(1)).abs(), (low - close.shift(1)).abs()], axis=1).max(axis=1)
-            atr14 = tr.ewm(alpha=1.0 / 14, adjust=False).mean()
-            d["u_price"] = 0.5 * atr14
+            d = (
+                sub5.set_index("timestamp")
+                .resample(rule_str)
+                .agg({"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"})
+                .dropna()
+                .reset_index()
+                .sort_values("timestamp")
+            )
+            m = pd.merge_asof(d[["timestamp"]], h4_ref, on="timestamp", direction="backward")
+            gamma = float(gamma_map.get(tfl, 0.29))
+            u_pct_arr = np.maximum(min_u_pct, m["macro_pct_4h"].ffill().fillna(min_u_pct / max(gamma, 1e-6)).values * gamma)
+            d["u_price"] = d["close"].values * u_pct_arr
             d30 = d[d["timestamp"] >= cutoff_30d]
             med_close = float(d30["close"].median())
             med_u = float(d30["u_price"].median())
@@ -934,20 +953,21 @@ def render_rog_calculator_and_ladder_html() -> str:
 
 def main():
     core_cfg, all_75_rules, coin_audits = load_all_v23_data()
-    conv_df = compute_1u_usd_reference_table()
+    conv_df = compute_1u_usd_reference_table(core_cfg.get("unit_config"))
     top_must_keys = compute_top_must_keys(all_75_rules)
     summary = core_cfg.get("summary", {})
-    n_total = len(all_75_rules)
-    n_core = sum(1 for r in all_75_rules if r["status"] == "CORE")
-    n_exp = sum(1 for r in all_75_rules if r["status"] in ("CORE_EXP", "SCOUT_EXP"))
-    n_sniper = sum(1 for r in all_75_rules if r["status"] == "SNIPER")
-    n_scout = sum(1 for r in all_75_rules if r["status"] == "SCOUT")
-    n_hot = sum(1 for r in all_75_rules if r["status"] == "HOT_ADAPTIVE")
+    n_total = int(summary.get("total_setups", len(all_75_rules)))
+    bd = summary.get("breakdown", {})
+    n_core = int(bd.get("CORE", sum(1 for r in all_75_rules if r["status"] == "CORE")))
+    n_exp = int(bd.get("CORE_EXP", 0) + bd.get("SCOUT_EXP", 0)) or sum(1 for r in all_75_rules if r["status"] in ("CORE_EXP", "SCOUT_EXP"))
+    n_sniper = int(bd.get("SNIPER", sum(1 for r in all_75_rules if r["status"] == "SNIPER")))
+    n_scout = int(bd.get("SCOUT", sum(1 for r in all_75_rules if r["status"] == "SCOUT")))
+    n_hot = int(bd.get("HOT_ADAPTIVE", sum(1 for r in all_75_rules if r["status"] == "HOT_ADAPTIVE")))
 
-    b12 = summary.get("base_400g_12m", {"ret_pct": 841.7, "final_eq_usd": 94170, "net_profit_usd": 84170, "max_dd_pct": -9.72, "calmar": 86.6})
-    boos = summary.get("base_400g_oos_6m", {"ret_pct": 485.2, "max_dd_pct": -6.88, "calmar": 70.5})
-    t12 = summary.get("auto_turbo_12m", {"ret_pct": 1481.0, "final_eq_usd": 158100, "net_profit_usd": 148100, "max_dd_pct": -12.13, "calmar": 122.1})
-    toos = summary.get("auto_turbo_oos_6m", {"ret_pct": 828.1, "max_dd_pct": -8.62, "calmar": 96.1})
+    b36 = summary.get("base_400g_36m", summary.get("base_400g_12m", {}))
+    by3 = summary.get("base_400g_blind_y3", summary.get("base_400g_oos_6m", {}))
+    t36 = summary.get("auto_turbo_36m", summary.get("auto_turbo_12m", {}))
+    ty3 = summary.get("auto_turbo_blind_y3", summary.get("auto_turbo_oos_6m", {}))
 
     # Build 6 Individual Coin Tabs HTML
     coin_tabs_html = []
@@ -1028,7 +1048,7 @@ def main():
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CHICKTRADE v2.3 — Hệ Thống Giao Dịch 6 Coin ({n_total} Setup Đang Chạy)</title>
+<title>CHICKTRADE v3.0 — Hệ Thống Giao Dịch 6 Coin ({n_total} Setup · U3_HTF_MACRO_ATR)</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
@@ -1882,29 +1902,29 @@ def main():
 <header class="hero-bar">
   <div class="hero-inner">
     <div class="hero-title">
-      <h1>CHICKTRADE v2.3 — Hệ Thống Giao Dịch Định Lượng 6 Coin ({n_total} Setup Đang Chạy)</h1>
-      <p>Giao diện Light Fintech (Unslop) &middot; 2 Lớp Màu Độc Lập (Thang Volume &amp; Chữ Số Tài Chính) &middot; Bao 400G / Auto-Turbo 250G &middot; 0 Cuộn Ngang</p>
+      <h1>CHICKTRADE v3.0 — Hệ Thống Giao Dịch Định Lượng 6 Coin ({n_total} Setup · U3_HTF_MACRO_ATR)</h1>
+      <p>Giao diện Light Fintech (Unslop) &middot; Thước đo <code>1U = U3_HTF_MACRO_ATR (4H EMA20 &times; &gamma;_tf)</code> &middot; Bao 400G / Auto-Turbo 250G &middot; 0 Cuộn Ngang</p>
     </div>
     <div class="hero-actions">
       <button class="dict-toggle-btn" onclick="toggleGlossary()">📖 Từ Điển Giải Thích Nhanh (30 Giây Hiểu Liền)</button>
-      <span class="ver-badge num">FINTECH v2.3 · {n_total} SETUPS</span>
+      <span class="ver-badge num">FINTECH v3.0 · {n_total} SETUPS (U3 4H)</span>
     </div>
   </div>
   <div class="hero-meta-wrap">
     <div class="hero-meta-bar">
-      <span><b>Dữ liệu thống kê:</b> <span class="nw"><code>01/11/2025 &rarr; 31/10/2026</code></span> <em class="nw">(12 tháng trọn vẹn &middot; 105,120 nến 5m/coin &middot; Binance USD-M Futures)</em></span>
-      <span><b>Chia kiểm chứng:</b> <span class="nw"><code>6T đầu (IS): 01/11/2025 &ndash; 23/04/2026</code></span> &middot; <span class="nw"><code>6T cuối (OOS): 23/04/2026 &ndash; 31/10/2026</code></span></span>
-      <span><b>Phương pháp tính:</b> <span class="nw"><code>1U = 0.5 &times; ATR(14)</code></span> &middot; <span class="nw">Đã trừ phí sàn <code>0.02%</code> Maker / <code>0.05%</code> Taker + trượt giá <code>0.01%</code></span> &middot; <span class="nw">Vốn mẫu <code>$10,000</code> lãi kép 20 bậc (<code>+8%/bậc</code>)</span> &middot; <span class="nw">Phanh <code>PORTFOLIO 2-SL Core-Only &rarr; Shadow-Win</code></span></span>
+      <span><b>Dữ liệu 3 năm:</b> <span class="nw"><code>01/11/2023 &rarr; 31/10/2026</code></span> <em class="nw">(36 tháng trọn vẹn &middot; 315,648 nến 5m/coin &middot; Binance USD-M Futures)</em></span>
+      <span><b>Chia kiểm chứng:</b> <span class="nw"><code>Train 2Y (IS): 11/2023 &ndash; 10/2025</code></span> &middot; <span class="nw"><code>Thi Mù Năm 3 (OOS): 11/2025 &ndash; 10/2026</code></span></span>
+      <span><b>Chuẩn 1U v3.0:</b> <span class="nw"><code>1U = U3_HTF_MACRO_ATR (4H EMA20 &times; &gamma;_tf)</code></span> &middot; <span class="nw">Phí <code>0.02%</code>/<code>0.05%</code> + trượt <code>0.01%</code></span> &middot; <span class="nw">Lãi kép 20 bậc (<code>+8%/bậc</code>)</span> &middot; <span class="nw">Phanh <code>PORTFOLIO 2-SL &rarr; Shadow-Win</code></span></span>
     </div>
   </div>
 </header>
 
 <nav class="nav-tabs">
   <div class="nav-tabs-inner">
-    <button class="tab-btn active" onclick="switchTab('tab-overview', this)">🌐 Tổng Quan v2.3 ({n_total} Setup)</button>
+    <button class="tab-btn active" onclick="switchTab('tab-overview', this)">🌐 Tổng Quan v3.0 ({n_total} Setup)</button>
     <button class="tab-btn" onclick="switchTab('tab-75-rules', this)">🎯 {n_total} Setup Đang Chạy</button>
     {''.join(coin_nav_btns)}
-    <button class="tab-btn" onclick="switchTab('tab-guide', this)">📖 Luật Vận Hành Hiện Tại</button>
+    <button class="tab-btn" onclick="switchTab('tab-guide', this)">📖 Luật Vận Hành v3.0</button>
   </div>
 </nav>
 
@@ -1913,14 +1933,14 @@ def main():
   <!-- COLLAPSIBLE QUICK GLOSSARY DRAWER (6 CORE EXPLANATIONS) -->
   <div id="glossary-drawer" class="glossary-drawer">
     <h3>
-      <span>📖 Từ Điển Giải Thích Nhanh 6 Điểm Cốt Lõi (Rê chuột vào tiêu đề cột bất kỳ để xem gợi ý)</span>
+      <span>📖 Từ Điển Giải Thích Nhanh 6 Điểm Cốt Lõi v3.0 (Rê chuột vào tiêu đề cột bất kỳ để xem gợi ý)</span>
       <button class="f-btn" onclick="toggleGlossary()">Đóng &times;</button>
     </h3>
     <div class="glossary-grid">
       <div class="g-item" style="border-left-color:#0284C7;">
-        <strong>1. Cách Đọc Mã Setup Rút Gọn (EMA89C1 / EMA200C4)</strong>
-        &bull; <code>EMA34 / EMA89 / EMA200</code> là đường trung bình động đóng vai trò hỗ trợ/kháng cự động.<br>
-        &bull; Chữ <code>C1, C2, C3, C4</code> là viết tắt của <strong>Chạm lần 1, Chạm lần 2, Chạm lần 3, Chạm lần 4</strong> tính từ khi bắt đầu xu hướng: <code>C1–C3</code> đánh <strong>Thuận xu hướng</strong>, còn <code>C4</code> đánh <strong>Đảo chiều cạn sóng</strong>.
+        <strong>1. Chuẩn Thước Đo 1U v3.0 (<code>U3_HTF_MACRO_ATR</code>)</strong>
+        &bull; <code>1U(t) = Close(t) &times; max(0.08%, EMA20_4H(0.5&times;ATR14_4H/Close_4H) &times; &gamma;_tf)</code> (chỉ đọc nến <code>4H</code> đã đóng, 100% Zero-Lookahead).<br>
+        &bull; Hệ số <code>&gamma;_tf</code>: <code>5m: 0.17</code> &middot; <code>15m: 0.29</code> &middot; <code>30m: 0.41</code> &middot; <code>1h: 0.59</code> &mdash; bất biến theo vùng giá và thích ứng mượt theo sóng vĩ mô 4H.
       </div>
       <div class="g-item" style="border-left-color:#059669;">
         <strong style="color:#059669;">2. Phân Biệt Thắng Tiền % (Profit WR) vs WR Số Lệnh %</strong>
@@ -1934,20 +1954,20 @@ def main():
         &bull; <code>TP1 %</code> &amp; <code>TP2 %</code>: Tỷ lệ chạm đích chốt lời nhịp 1 và ăn trọn nhịp 2.
       </div>
       <div class="g-item" style="border-left-color:#6D28D9;">
-        <strong style="color:#6D28D9;">4. Bốn Nhóm Trong {n_total} Setup Đang Chạy</strong>
-        &bull; <strong>Đánh Chính Core ({n_core}) &amp; Mở Rộng ({n_exp}):</strong> Nhóm chủ lực bền cả 2 nửa năm (Volume <code>0.57&times; – 1.23&times;</code>).<br>
-        &bull; <strong>Sniper Hiếm Lệnh ({n_sniper}) &amp; Scout ({n_scout}):</strong> Xuất hiện ít (3–14 lệnh/năm) nhưng Thắng Tiền rất cao (Volume <code>0.35&times; – 0.45&times;</code>).<br>
-        &bull; <strong>Thích Ứng 6T Cuối ({n_hot}):</strong> Bắt sóng mới nổi ở nửa cuối năm (Volume thăm dò <code>0.40&times;</code>).
+        <strong style="color:#6D28D9;">4. Hai Nhóm Trong {n_total} Setup v3.0 Đang Chạy</strong>
+        &bull; <strong>Đánh Chính Core ({n_core} Setup):</strong> Hệ số Kelly <code>0.85&times;</code> (PF 2Y &ge; 1.50 và đạt chuẩn ở cả Năm 1 lẫn Năm 2).<br>
+        &bull; <strong>Mở Rộng Core Exp ({n_exp} Setup):</strong> Hệ số <code>0.55&times;</code> (PF 2Y &ge; 1.20 và đạt chuẩn cả 2 năm độc lập).<br>
+        &bull; Đọc thêm mã rút gọn: <code>EMA34/89/200</code> + nhịp chạm <code>C1–C3</code> (Thuận xu hướng) / <code>C4</code> (Đảo chiều).
       </div>
       <div class="g-item" style="border-left-color:#0284C7;">
-        <strong>5. Lý Do Tách 2 Nửa Năm: 6T Đầu (IS) &amp; 6T Cuối (OOS)</strong>
-        Chia dữ liệu 1 năm thành 2 giai đoạn 6 tháng độc lập (6 tháng đầu năm và 6 tháng cuối năm) để kiểm tra chéo. Việc một Setup duy trì hệ số Lãi/Lỗ <code>PF &gt; 1.10</code> ở cả 2 nửa năm chứng minh hệ thống có lợi thế thật, không bị học vẹt quá khứ (Overfitting).
+        <strong>5. Kiểm Chứng Walk-Forward 3 Năm: Train 2Y (IS) &amp; Thi Mù Năm 3 (OOS)</strong>
+        58 Setup được lọc hoàn toàn trên 2 năm <code>11/2023 &ndash; 10/2025</code> (<code>PF_IS</code>), sau đó đem thi mù không chỉnh sửa sang Năm 3 <code>11/2025 &ndash; 10/2026</code> (<code>PF_OOS</code>), đạt <strong>+{float(ty3.get('ret_pct', 0)):.2f}%</strong> (Auto-Turbo) / <strong>+{float(by3.get('ret_pct', 0)):.2f}%</strong> (Bao 400G).
       </div>
       <div class="g-item" style="border-left-color:#D97706;">
         <strong style="color:#B45309;">6. Công Thức Nhẩm Nhanh Tiền Thật Tại Bậc 0 ($10,000 · Bao 400G)</strong>
         Tại vốn khởi điểm <strong>$10,000</strong> và mức <strong>Bao 400 giá</strong>, mỗi <code>1U = $25.00 USD</code>:<br>
         <code>Lãi USD = Số U &times; $25 &times; Mức Volume</code>.<br>
-        Ví dụ: Setup thắng <code>+40U</code> với <code>Volume 1.0&times;</code> &rarr; Lãi đơn <code>40 &times; $25 &times; 1.0 = +$1,000 USD</code> (chưa cộng lãi kép 20 bậc).
+        Ví dụ: Setup thắng <code>+40U</code> với <code>Volume 0.85&times;</code> &rarr; Lãi đơn <code>40 &times; $25 &times; 0.85 = +$850 USD</code> (chưa cộng lãi kép 20 bậc).
       </div>
     </div>
   </div>
@@ -1962,23 +1982,23 @@ def main():
           <span class="status-pill" style="background:#ECFDF5;color:#059669;border:1px solid #A7F3D0;">MẶC ĐỊNH ĐANG BẬT</span>
         </h3>
         <p style="margin:0;color:#475569;font-size:12.8px;">
-          Vận hành đồng thời <strong>{n_total} Setup đang chạy</strong> ({n_core} Core · {n_exp} Mở rộng · {n_sniper} Sniper · {n_scout} Scout · {n_hot} Thích ứng 6T cuối) tại mức <strong>Bao 400 giá</strong> (mỗi 1U = $25 USD ở vốn gốc $10,000). Tự động kích hoạt <strong>Đánh nháp ngầm (Shadow-Win)</strong> sau 2 lệnh SL Core liên tiếp.
+          Vận hành đồng thời <strong>{n_total} Setup v3.0</strong> ({n_core} Core <code>0.85&times;</code> &middot; {n_exp} Mở rộng <code>0.55&times;</code>) với thước đo <code>U3_HTF_MACRO_ATR</code> tại mức <strong>Bao 400 giá</strong>. Kích hoạt <strong>Đánh nháp ngầm (Shadow-Win)</strong> sau 2 lệnh SL Core liên tiếp.
         </p>
         <div class="mode-metrics">
           <div class="m-item">
-            <span>Lãi Ròng 1 Năm (USD &amp; %)</span>
-            <strong class="num" style="color:#059669;">+${int(b12['net_profit_usd']):,d} (+{float(b12['ret_pct']):.1f}%)</strong>
-            <small class="num">Tiền USD lãi ròng trên vốn gốc $10,000 (Lãi kép 20 bậc &rarr; Tổng tài sản ${int(b12['final_eq_usd']):,d})</small>
+            <span>Lãi Ròng 36 Tháng (11/2023&ndash;10/2026)</span>
+            <strong class="num" style="color:#059669;">+${int(round(float(b36['net_profit_usd']))):,d} (+{float(b36['ret_pct']):,.1f}%)</strong>
+            <small class="num">Lãi kép 20 bậc từ vốn $10,000 &rarr; Tổng tài sản <strong>${int(round(float(b36['final_eq_usd']))):,d}</strong> ({int(b36.get('trades', 0)):,d} lệnh)</small>
           </div>
           <div class="m-item">
-            <span>Sụt Giảm Tối Đa (MaxDD 1 Năm)</span>
-            <strong class="num" style="color:#DC2626;">{float(b12['max_dd_pct']):.2f}% <span style="color:#0369A1;font-size:13px;">(Calmar {float(b12['calmar']):.1f})</span></strong>
-            <small>Đường cong vốn mượt, kiểm soát rủi ro chặt chẽ trên cả 6 Coin</small>
+            <span>Sụt Giảm Tối Đa (MaxDD 36 Tháng)</span>
+            <strong class="num" style="color:#DC2626;">{float(b36['max_dd_pct']):.2f}% <span style="color:#0369A1;font-size:13px;">(Calmar {float(b36['calmar']):.1f})</span></strong>
+            <small>Đường cong vốn êm mượt kỷ lục xuyên 3 năm trên cả 6 Coin (PF {float(b36.get('pf', 1.52)):.2f})</small>
           </div>
           <div class="m-item">
-            <span>Hiệu Suất 6 Tháng Cuối (OOS)</span>
-            <strong class="num" style="color:#059669;">+{float(boos['ret_pct']):.1f}% <span style="color:#DC2626;font-size:13px;">(DD {float(boos['max_dd_pct']):.2f}%)</span></strong>
-            <small class="num">Sụt giảm 6T cuối cực thấp chỉ <strong>{float(boos['max_dd_pct']):.2f}%</strong> · Điểm Calmar OOS <strong>{float(boos['calmar']):.1f}</strong></small>
+            <span>Vượt Bài Thi Mù Năm 3 (11/2025&ndash;10/2026)</span>
+            <strong class="num" style="color:#059669;">+{float(by3['ret_pct']):.2f}% <span style="color:#DC2626;font-size:13px;">(DD {float(by3['max_dd_pct']):.2f}%)</span></strong>
+            <small class="num">100% Out-Of-Sample &rarr; <strong>${int(round(float(by3['final_eq_usd']))):,d}</strong> · PF <strong>{float(by3.get('pf', 1.13)):.2f}</strong> · Calmar <strong>{float(by3['calmar']):.2f}</strong></small>
           </div>
         </div>
       </div>
@@ -1989,23 +2009,23 @@ def main():
           <span class="status-pill st-sp">CÔNG TẮC TÙY CHỌN (ON/OFF)</span>
         </h3>
         <p style="margin:0;color:#475569;font-size:12.8px;">
-          Khởi đầu ở Bao 400 giá để bảo vệ vốn gốc $10,000. Khi vốn tăng lên <strong>&ge; $12,500</strong>, hệ thống tự động sang số <strong>Bao 250 giá</strong> để bứt tốc lãi kép. Nếu tổng rủi ro SL của các lệnh đang mở có nguy cơ chạm sàn bảo vệ <strong>$11,000 (+10% lãi khóa cứng)</strong>, bot tự lùi về Bao 400 giá ngay lập tức.
+          Khởi đầu ở Bao 400 giá để bảo vệ vốn gốc $10,000. Khi vốn tăng lên <strong>&ge; $12,500</strong>, hệ thống tự động sang số <strong>Bao 250 giá</strong> để bứt tốc lãi kép. Nếu tổng rủi ro SL mở chạm sàn <strong>$11,000 (+10% khóa cứng)</strong>, bot lùi về Bao 400G ngay.
         </p>
         <div class="mode-metrics">
           <div class="m-item">
-            <span>Lãi Ròng 1 Năm (USD &amp; %)</span>
-            <strong class="num" style="color:#15803D;">+${int(t12['net_profit_usd']):,d} (+{float(t12['ret_pct']):,.1f}%)</strong>
-            <small class="num">Tiền USD lãi ròng trên vốn gốc $10,000 (Lãi kép 20 bậc &rarr; Tổng tài sản ${int(t12['final_eq_usd']):,d})</small>
+            <span>Lãi Ròng 36 Tháng (11/2023&ndash;10/2026)</span>
+            <strong class="num" style="color:#15803D;">+${int(round(float(t36['net_profit_usd']))):,d} (+{float(t36['ret_pct']):,.1f}%)</strong>
+            <small class="num">Lãi kép 20 bậc từ vốn $10,000 &rarr; Tổng tài sản <strong>${int(round(float(t36['final_eq_usd']))):,d}</strong> (&times;{float(t36['final_eq_usd'])/10000.0:.2f} vốn)</small>
           </div>
           <div class="m-item">
-            <span>Sụt Giảm Tối Đa (MaxDD 1 Năm)</span>
-            <strong class="num" style="color:#DC2626;">{float(t12['max_dd_pct']):.2f}% <span style="color:#B45309;font-size:13px;">(Calmar {float(t12['calmar']):.1f})</span></strong>
-            <small class="num">Điểm Calmar đạt Bậc S+ (<strong>{float(t12['calmar']):.1f}</strong>) · Giữ cứng sàn tài sản &ge; <strong>$11,000</strong></small>
+            <span>Sụt Giảm Tối Đa (MaxDD 36 Tháng)</span>
+            <strong class="num" style="color:#DC2626;">{float(t36['max_dd_pct']):.2f}% <span style="color:#B45309;font-size:13px;">(Calmar {float(t36['calmar']):.1f})</span></strong>
+            <small class="num">Điểm Calmar 36M đạt Bậc S+ (<strong>{float(t36['calmar']):.1f}</strong>) · Giữ cứng sàn tài sản &ge; <strong>$11,000</strong></small>
           </div>
           <div class="m-item">
-            <span>Hiệu Suất 6 Tháng Cuối (OOS)</span>
-            <strong class="num" style="color:#15803D;">+{float(toos['ret_pct']):.1f}% <span style="color:#DC2626;font-size:13px;">(DD {float(toos['max_dd_pct']):.2f}%)</span></strong>
-            <small class="num">Sụt giảm 6T cuối chỉ <strong>{float(toos['max_dd_pct']):.2f}%</strong> · Điểm Calmar OOS đạt <strong>{float(toos['calmar']):.1f}</strong></small>
+            <span>Vượt Bài Thi Mù Năm 3 (11/2025&ndash;10/2026)</span>
+            <strong class="num" style="color:#15803D;">+{float(ty3['ret_pct']):.2f}% <span style="color:#DC2626;font-size:13px;">(DD {float(ty3['max_dd_pct']):.2f}%)</span></strong>
+            <small class="num">100% Out-Of-Sample &rarr; <strong>${int(round(float(ty3['final_eq_usd']))):,d}</strong> · PF <strong>{float(ty3.get('pf', 1.15)):.2f}</strong> · Calmar <strong>{float(ty3['calmar']):.2f}</strong></small>
           </div>
         </div>
       </div>
@@ -2017,10 +2037,10 @@ def main():
 
     <div class="section-card">
       <div class="section-head">
-        <h3>💵 Bảng Quy Đổi Tham Khảo 1U &rarr; Tiền USD &amp; Khối Lượng Vào Lệnh Thực Tế (Mẫu Vốn Gốc $10,000 · Bao 400 Giá · Vol 1.0&times;)</h3>
+        <h3>💵 Bảng Quy Đổi Tham Khảo 1U &rarr; Tiền USD &amp; Khối Lượng Vào Lệnh Thực Tế (Chuẩn v3.0 <code>U3_HTF_MACRO_ATR</code> · Vốn $10,000 · Bao 400G · Vol 1.0&times;)</h3>
       </div>
       <p style="margin:0 0 10px 0;font-size:12.5px;color:#475569;">
-        Tính từ trung vị 30 ngày gần nhất của từng đồng Coin (<code>1U = 0.5 &times; ATR(14)</code>). Tại vốn gốc <strong>$10,000</strong> và mức <strong>Bao 400 giá</strong>, mỗi <strong>1U biến động giá tương đương đúng $25.00 USD</strong> (Công thức nhẩm nhanh: <code>Lãi USD = Số U &times; $25 &times; Mức Volume</code>):
+        Tính từ trung vị 30 ngày gần nhất theo công thức <code>1U = Close &times; max(0.08%, EMA20_4H(0.5&times;ATR14_4H/Close_4H) &times; &gamma;_tf)</code>. Tại vốn gốc <strong>$10,000</strong> và mức <strong>Bao 400 giá</strong>, mỗi <strong>1U = $25.00 USD</strong> (<code>Lãi USD = Số U &times; $25 &times; Mức Volume</code>):
       </p>
       {render_1u_conversion_table_html(conv_df)}
     </div>
@@ -2066,43 +2086,42 @@ def main():
   <section id="tab-guide" class="tab-panel">
     <div class="section-card">
       <div class="section-head">
-        <h3>📖 Tổng Hợp Bộ Luật Vận Hành Thực Tế Hiện Tại Của Hệ Thống CHICKTRADE v2.3 ({n_total} Setup Chạy Tự Động 24/7)</h3>
+        <h3>📖 Tổng Hợp Bộ Luật Vận Hành Thực Tế Hiện Tại Của Hệ Thống CHICKTRADE v3.0 ({n_total} Setup · U3_HTF_MACRO_ATR)</h3>
       </div>
       <div class="flow-grid">
         <div class="flow-box">
-          <h4>1. Đa Khung Giờ &amp; Đồng Thuận Xu Hướng</h4>
-          &bull; Giao dịch 24/7 trên các khung <code>15m</code>, <code>30m</code>, <code>1h</code> (và Setup chọn lọc trên <code>5m</code> là <code>LINK 5m EMA89C2</code>).<br>
-          &bull; Khung <code>5m &amp; 15m</code> bắt buộc thuận theo xu hướng đóng nến của khung <code>1h</code>; khung <code>30m &amp; 1h</code> bắt buộc thuận theo khung <code>4h</code> (<code>Close &gt; EMA200 &amp; EMA34 &gt; EMA200</code> cho Long; ngược lại cho Short) kèm <code>ADX(14) &ge; 20</code>.
+          <h4>1. Thước Đo 1U Bất Biến <code>U3_HTF_MACRO_ATR</code> &amp; Đa Khung Giờ</h4>
+          &bull; Giao dịch 24/7 trên các khung <code>15m</code>, <code>30m</code>, <code>1h</code>; thước đo <code>1U(t) = Close(t) &times; max(0.08%, EMA20_4H(0.5&times;ATR14_4H/Close_4H) &times; &gamma;_tf)</code> (<code>&gamma; = 0.29 / 0.41 / 0.59</code>, Zero-Lookahead).<br>
+          &bull; Khung <code>15m</code> thuận theo xu hướng đóng nến <code>1h</code>; khung <code>30m &amp; 1h</code> thuận theo khung <code>4h</code> (<code>Close &gt; EMA200 &amp; EMA34 &gt; EMA200</code> cho Long; ngược lại cho Short) kèm <code>ADX(14) &ge; 20</code>.
         </div>
         <div class="flow-box">
-          <h4>2. Mã Setup (C1–C4) &amp; Khóa Chiều (Luật 1B)</h4>
+          <h4>2. Mã Setup (C1–C4) &amp; Điều Kiện Vào Lệnh</h4>
           &bull; Sau khi giá bứt phá khỏi EMA (<code>Impulse &ge; 0.8–1.2 ATR</code>), chờ giá hồi về chạm vùng đệm EMA (<code>&pm;0.20 ATR</code>) và rút chân giữ cấu trúc:<br>
           &bull; <strong>Chạm 1, 2, 3 (C1, C2, C3):</strong> Đánh thuận xu hướng chính.<br>
           &bull; <strong>Chạm 4 (C4):</strong> Đánh đảo chiều cạn sóng.<br>
-          &bull; <strong>Khóa 1 chiều:</strong> <code>BNBUSDT 1h EMA200C1</code> chỉ đánh <strong>LONG</strong>; <code>XRPUSDT 1h EMA34C2</code> chỉ đánh <strong>SHORT</strong>.
+          &bull; Tối đa <strong>1 lệnh/coin</strong> cùng lúc (thuận 2 chiều theo lọc xu hướng HTF).
         </div>
         <div class="flow-box">
           <h4>3. Thoát Lệnh Tối Ưu &amp; 4 Nhánh Xác Suất</h4>
-          Mỗi Setup trong {n_total} Setup sử dụng đúng kiến trúc chốt lời sinh lời cao nhất của nó:<br>
+          Mỗi Setup trong {n_total} Setup sử dụng đúng kiến trúc chốt lời sinh lời cao nhất của nó trên 2 năm Train:<br>
           &bull; <strong>Chốt 100% tại TP1 (3.5U–4U) hoặc 1R (5U–6U):</strong> Khóa lãi gọn cho các Setup bật nhanh.<br>
           &bull; <strong>Chia 2 nhịp (50% TP1 + 50% TP2):</strong> Chốt 50% ở TP1, phần còn lại gồng lên TP2 (8U–12U) với SL chân 2 đặt tại <code>Entry - 1U</code>, <code>Entry - 2U</code>, <code>Hòa vốn</code> hoặc <code>Giữ SL gốc</code>.
         </div>
         <div class="flow-box">
-          <h4>4. Phân Bổ Khối Lượng ({n_total} Setup Đang Chạy)</h4>
-          &bull; <strong>{n_core} Setup Chính (Core):</strong> Volume từ <code>0.57&times; đến 1.23&times;</code> theo điểm Kelly.<br>
-          &bull; <strong>{n_exp} Setup Mở Rộng (Core/Scout Exp):</strong> Bền cả 2 nửa năm, Volume <code>0.75&times;</code> (8 Setup) và <code>0.45&times;</code> (3 Setup).<br>
-          &bull; <strong>{n_sniper} Setup Sniper &amp; {n_scout} Setup Scout:</strong> Hiếm lệnh nhưng Thắng Tiền cao, Volume <code>0.35&times; – 0.45&times;</code>.<br>
-          &bull; <strong>{n_hot} Setup Thích Ứng 6T Cuối:</strong> Volume thăm dò <code>0.40&times;</code>.
+          <h4>4. Phân Bổ Khối Lượng v3.0 ({n_total} Setup Đang Chạy)</h4>
+          &bull; <strong>{n_core} Setup Chính (Core):</strong> Volume chuẩn <code>0.85&times;</code> (PF 2Y Train &ge; 1.50 và dương ở cả 2 năm độc lập).<br>
+          &bull; <strong>{n_exp} Setup Mở Rộng (Core Exp):</strong> Volume chuẩn <code>0.55&times;</code> (PF 2Y Train &ge; 1.20 và dương ở cả 2 năm độc lập).<br>
+          &bull; Toàn bộ 58 Setup đều vượt ngưỡng <code>Vol &gt; 0.45&times;</code>, áp dụng đồng nhất chuẩn <code>U3_HTF_MACRO_ATR</code>.
         </div>
         <div class="flow-box">
           <h4>5. Khiên Chống Bão 3 Lớp &amp; Đánh Nháp Ngầm (Luật 4E)</h4>
           &bull; <strong>Storm Guard 4h:</strong> Tự khóa vào lệnh mới 4 giờ khi nến giật bão 2 đầu (<code>ATR &ge; 1.8&times;MA50</code>, nến quét <code>&ge; 2.8 ATR</code>, hoặc <code>Kaufman ER &lt; 0.15</code>) trên coin đó hoặc trên BTC.<br>
-          &bull; <strong>Đánh Nháp Ngầm (Shadow-Win):</strong> Khi cả danh mục dính <strong>2 lệnh SL gốc liên tiếp</strong> ở nhóm Core (<code>Vol &gt; 0.45&times;</code> theo Luật 4E; nhánh <code>Dời/QuaySL</code> và các Setup &le; 0.45&times; không làm đóng băng danh mục), bot tạm dừng tiền thật và đợi <strong>1 lệnh thắng nháp</strong> mới mở lại.
+          &bull; <strong>Đánh Nháp Ngầm (Shadow-Win):</strong> Khi cả danh mục dính <strong>2 lệnh SL gốc liên tiếp</strong> ở nhóm Core (<code>Vol &gt; 0.45&times;</code>), bot tạm dừng tiền thật và đợi <strong>1 lệnh thắng nháp</strong> mới mở lại (tối đa 72h).
         </div>
         <div class="flow-box">
           <h4>6. Quản Trị Danh Mục, Lãi Kép 20 Bậc &amp; Auto-Turbo</h4>
           &bull; <strong>Trần Danh Mục:</strong> Tối đa <strong>5 lệnh mở cùng lúc</strong> (mỗi coin tối đa 1 lệnh, tổng hệ số Volume mở &le; <code>4.25&times;</code>), tối đa <strong>10 lệnh/ngày</strong>, nghỉ trong ngày nếu lỗ ngày chạm <code>-5%</code>.<br>
-          &bull; <strong>Lãi Kép 20 Bậc (+8%/bậc) &amp; Auto-Turbo:</strong> Mặc định chạy <strong>Bao 400 giá (+$84,170)</strong>. Khi bật <strong>Auto-Turbo</strong>, hễ vốn &ge; <code>$12,500</code> bot tự chuyển sang <strong>Bao 250 giá (+$148,100)</strong> và luôn giữ cứng sàn tài sản <strong>&ge; $11,000</strong>.
+          &bull; <strong>Lãi Kép 20 Bậc (+8%/bậc) &amp; Auto-Turbo:</strong> Chuỗi 36M đạt <strong>Bao 400G (+{float(b36['ret_pct']):,.1f}% &rarr; ${int(round(float(b36['final_eq_usd']))):,d})</strong>; khi bật <strong>Auto-Turbo 250G</strong> (&ge; <code>$12,500</code>, khóa sàn &ge; <code>$11,000</code>) đạt <strong>+{float(t36['ret_pct']):,.1f}% &rarr; ${int(round(float(t36['final_eq_usd']))):,d}</strong>.
         </div>
       </div>
     </div>
@@ -2394,7 +2413,7 @@ def main():
     out_html = os.path.join(REPORTS_DIR, "chicktrade_6coin_master_report.html")
     with open(out_html, "w", encoding="utf-8") as f:
         f.write(html_doc)
-    print(f"[DONE] Generated v2.3 Light Mode Fintech (Unslop) Master HTML Report ({n_total} setups, 2-layer color system, 0 horizontal scroll) at: {out_html}")
+    print(f"[DONE] Generated v3.0 Light Mode Fintech (U3_HTF_MACRO_ATR) Master HTML Report ({n_total} setups, 2-layer color system, 0 horizontal scroll) at: {out_html}")
 
 
 if __name__ == "__main__":
