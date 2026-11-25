@@ -101,9 +101,108 @@ def floor_step(val: float, step: float) -> float:
     return round(floored, prec)
 
 
-def fetch_symbol_klines(sym: str, interval: str, limit: int = 500) -> pd.DataFrame:
-    """Fetch Binance USD-M Futures klines and return strictly closed + live metadata."""
-    raw = _fapi_get("/fapi/v1/klines", params={"symbol": sym, "interval": interval, "limit": limit})
+def _fetch_klines_with_fallback(sym: str, interval: str, limit: int) -> List[List[Any]]:
+    """Fetch klines with resilient fallback for US cloud runners (Binance FAPI -> Binance Vision -> OKX -> Gate)."""
+    hdrs = {"User-Agent": "curl/8.4.0", "Accept": "application/json"}
+    errs: List[str] = []
+
+    # 1. Binance Futures mirrors (works locally / non-US)
+    for base in FAPI_BASES:
+        try:
+            r = requests.get(f"{base}/fapi/v1/klines", params={"symbol": sym, "interval": interval, "limit": min(limit, 1500)}, headers=hdrs, timeout=10)
+            if r.status_code == 200:
+                arr = r.json()
+                if isinstance(arr, list) and len(arr) >= 50:
+                    return arr
+            errs.append(f"BF:{r.status_code}")
+        except Exception as exc:
+            errs.append(f"BF:err")
+
+    # 2. Binance Vision Global CDN (never geo-blocked on GitHub Actions US runners, up to 1000/call -> paginate for 1200)
+    try:
+        step_ms = TF_MS.get(interval, 900_000)
+        r1 = requests.get(
+            "https://data-api.binance.vision/api/v3/klines",
+            params={"symbol": sym, "interval": interval, "limit": min(limit, 1000)},
+            headers=hdrs,
+            timeout=12,
+        )
+        if r1.status_code == 200:
+            arr1 = r1.json()
+            if isinstance(arr1, list) and len(arr1) >= 50:
+                if limit > 1000 and len(arr1) == 1000:
+                    extra = min(limit - 1000, 1000)
+                    end_t = int(arr1[0][0]) - 1
+                    r0 = requests.get(
+                        "https://data-api.binance.vision/api/v3/klines",
+                        params={"symbol": sym, "interval": interval, "endTime": end_t, "limit": extra},
+                        headers=hdrs,
+                        timeout=12,
+                    )
+                    if r0.status_code == 200 and isinstance(r0.json(), list):
+                        arr1 = r0.json() + arr1
+                return arr1
+        errs.append(f"BV:{r1.status_code}")
+    except Exception:
+        errs.append("BV:err")
+
+    # 3. OKX Perpetual Swap API (300/call, paginate up to 3 pages)
+    base_coin = sym.replace("USDT", "")
+    try:
+        okx_bar = {"15m": "15m", "30m": "30m", "1h": "1H", "4h": "4H"}.get(interval, "1H")
+        step_ms = TF_MS.get(interval, 3_600_000)
+        collected: List[List[Any]] = []
+        after_ts: Optional[str] = None
+        for _ in range(4):
+            params: Dict[str, Any] = {"instId": f"{base_coin}-USDT-SWAP", "bar": okx_bar, "limit": 300}
+            if after_ts:
+                params["after"] = after_ts
+            ro = requests.get("https://www.okx.com/api/v5/market/candles", params=params, headers=hdrs, timeout=10)
+            if ro.status_code != 200:
+                errs.append(f"OKX:{ro.status_code}")
+                break
+            rows = ro.json().get("data", [])
+            if not rows:
+                break
+            collected.extend(rows)
+            after_ts = str(rows[-1][0])
+            if len(collected) >= limit:
+                break
+        if len(collected) >= 50:
+            collected.reverse()
+            return [
+                [int(c[0]), c[1], c[2], c[3], c[4], c[5], int(c[0]) + step_ms - 1]
+                for c in collected[-limit:]
+            ]
+    except Exception:
+        errs.append("OKX:err")
+
+    # 4. Gate.io Futures API
+    try:
+        step_ms = TF_MS.get(interval, 3_600_000)
+        rg = requests.get(
+            "https://api.gateio.ws/api/v4/futures/usdt/candlesticks",
+            params={"contract": f"{base_coin}_USDT", "interval": interval, "limit": min(limit, 1000)},
+            headers=hdrs,
+            timeout=10,
+        )
+        if rg.status_code == 200:
+            arr = rg.json()
+            if isinstance(arr, list) and len(arr) >= 50:
+                return [
+                    [int(c["t"]) * 1000, str(c["o"]), str(c["h"]), str(c["l"]), str(c["c"]), str(c.get("v", 0)), int(c["t"]) * 1000 + step_ms - 1]
+                    for c in arr
+                ]
+        errs.append(f"GT:{rg.status_code}")
+    except Exception:
+        errs.append("GT:err")
+
+    raise RuntimeError(f"All market data sources failed for {sym} {interval}: {', '.join(errs)}")
+
+
+def fetch_symbol_klines(sym: str, interval: str, limit: int = 1200) -> pd.DataFrame:
+    """Fetch USD-M Futures klines (with resilient CDN/exchange fallback) and return OHLCV DataFrame."""
+    raw = _fetch_klines_with_fallback(sym, interval, limit)
     rows = []
     for k in raw:
         rows.append({
@@ -116,12 +215,13 @@ def fetch_symbol_klines(sym: str, interval: str, limit: int = 500) -> pd.DataFra
             "volume": float(k[5]),
             "close_time_ms": int(k[6]),
         })
-    return pd.DataFrame(rows)
+    df = pd.DataFrame(rows).drop_duplicates("open_time_ms").sort_values("open_time_ms").reset_index(drop=True)
+    return df
 
 
 def fetch_all_market_data(now_ms: int) -> Tuple[Dict[str, Dict[str, pd.DataFrame]], Dict[str, float]]:
-    """Parallel-fetch 15m/30m/1h/4h klines across 6 coins and split closed bars vs live price."""
-    tasks = [(sym, tf, 300 if tf == "4h" else 500) for sym in SIX_COINS for tf in ("15m", "30m", "1h", "4h")]
+    """Parallel-fetch 1200 bars (15m/30m/1h) & 600 bars (4h) for converged EMA200 & stable wave counts."""
+    tasks = [(sym, tf, 600 if tf == "4h" else 1200) for sym in SIX_COINS for tf in ("15m", "30m", "1h", "4h")]
     closed_data: Dict[str, Dict[str, pd.DataFrame]] = {sym: {} for sym in SIX_COINS}
     live_prices: Dict[str, float] = {}
 
@@ -403,7 +503,8 @@ def detect_latest_signals(
 def _calc_leg_pnl(entry: float, exit_px: float, qty: float, d: int, exit_maker: bool) -> float:
     slip_px = exit_px * (1.0 - d * SLIP_BPS) if not exit_maker else exit_px
     gross = d * (slip_px - entry) * qty
-    fees = (entry * qty * MAKER_FEE) + (slip_px * qty * (MAKER_FEE if exit_maker else TAKER_FEE))
+    # Live LIMIT IOC entry pays Taker fee (0.05%); exit pays Maker (0.02%) on TP or Taker (0.05%) on SL
+    fees = (entry * qty * TAKER_FEE) + (slip_px * qty * (MAKER_FEE if exit_maker else TAKER_FEE))
     return float(gross - fees)
 
 
@@ -1358,6 +1459,9 @@ def open_new_positions(
         if dt["trades"] >= 10 or dt["pnl"] <= -0.05 * dt["start_eq"]:
             continue
         if len(state["open_positions"]) >= 5 or any(p["symbol"] == sym for p in state["open_positions"]):
+            continue
+        # Correlation guard: cap max 3 simultaneous open positions in the same direction (LONG or SHORT)
+        if sum(1 for p in state["open_positions"] if p["direction"] == sig["direction"]) >= 3:
             continue
 
         eff_m = float(rule["adaptive_volume"]["init_vol_mult"])
