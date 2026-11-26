@@ -17,3 +17,11 @@ __pycache__/
 data/cache/
 coins/*/data/*.csv.gz
 *.zip
+
+# Archived legacy v1-v4 artifacts (kept locally only)
+old/
+
+old/
+graphify-out/.*
+
+graphify-out/cache/
