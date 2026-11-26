@@ -28,7 +28,7 @@ RULES_PATH = os.path.join(ROOT, "core", "core_strategy_rules.json")
 OUT_JSON = os.path.join(ROOT, "docs", "data", "live_dashboard.json")
 OUT_CHART_JSON = os.path.join(ROOT, "docs", "data", "chart_candles.json")
 
-SIX_COINS = ["BTCUSDT", "ETHUSDT", "BNBUSDT", "LINKUSDT", "XRPUSDT", "SOLUSDT"]
+SIX_COINS = ["BTCUSDT", "ETHUSDT", "BNBUSDT", "LINKUSDT", "XRPUSDT", "SOLUSDT", "NEARUSDT"]
 FAPI_BASES = [
     "https://fapi.binance.com",
     "https://fapi1.binance.com",
@@ -47,6 +47,7 @@ FALLBACK_EXCHANGE_FILTERS = {
     "LINKUSDT": {"stepSize": 0.01, "tickSize": 0.001, "minNotional": 5.0},
     "XRPUSDT": {"stepSize": 0.1, "tickSize": 0.0001, "minNotional": 5.0},
     "SOLUSDT": {"stepSize": 0.01, "tickSize": 0.01, "minNotional": 5.0},
+    "NEARUSDT": {"stepSize": 1.0, "tickSize": 0.001, "minNotional": 5.0},
 }
 
 TF_COOLDOWN = {"15m": 16, "30m": 8, "1h": 4}
@@ -296,6 +297,7 @@ def compute_u3_rates(
         "LINKUSDT": (6.0, 8.0, {"15m": 3.5, "30m": 3.5, "1h": 3.5}),
         "XRPUSDT": (6.0, 8.0, {"15m": 3.5, "30m": 3.5, "1h": 3.5}),
         "SOLUSDT": (6.0, 8.0, {"15m": 3.5, "30m": 3.5, "1h": 3.5}),
+        "NEARUSDT": (6.0, 15.0, {"15m": 4.0, "30m": 4.0, "1h": 4.0}),
     }
 
     rates_rows: List[dict] = []
