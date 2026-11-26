@@ -240,6 +240,7 @@ def simulate_v5_binance_exact(
     max_open: int = 5,
     max_same_dir: int = 3,
     init_cap: float = 10_000.0,
+    use_dd_throttle: bool = True,
 ) -> dict:
     """Strict Binance One-Way Cross 20x Portfolio Simulator (Max 5 Open, Causal Shadow Pause)."""
     ordered = sorted(trades, key=lambda x: (x["open_ts"], -x.get("score", 0.0), TF_PRIORITY.get(x["tf"], 0)))
@@ -294,7 +295,7 @@ def simulate_v5_binance_exact(
                 if use_turbo:
                     if (not turbo_active) and eq >= init_cap * 1.25:
                         turbo_active = True
-                    elif turbo_active and eq < init_cap * 1.15:
+                    elif turbo_active and eq <= init_cap * 1.10:
                         turbo_active = False
 
                 sk = (p["sym"], p["tf"], p["setup"])
@@ -369,12 +370,13 @@ def simulate_v5_binance_exact(
         else:
             vm = base_m
 
-        # Smooth portfolio DD throttle
-        dd_now = (eq - peak) / peak * 100.0 if peak > 0 else 0.0
-        if dd_now <= -6.0:
-            vm = min(vm, 0.25)
-        elif dd_now <= -3.5:
-            vm = vm * 0.75
+        # Optional portfolio DD throttle (disabled when Pure S2 Step-Locked Volume is active)
+        if use_dd_throttle:
+            dd_now = (eq - peak) / peak * 100.0 if peak > 0 else 0.0
+            if dd_now <= -6.0:
+                vm = min(vm, 0.25)
+            elif dd_now <= -3.5:
+                vm = vm * 0.75
 
         # Elevated volatility guard
         if t.get("elevated_vol", False):
@@ -382,7 +384,7 @@ def simulate_v5_binance_exact(
 
         buf = turbo_buffer if (use_turbo and turbo_active) else buffer_base
         if use_turbo and turbo_active:
-            worst_5sl = 5.0 * (tier_cap / turbo_buffer) * 5.0
+            worst_5sl = 30.0 * (tier_cap / turbo_buffer)
             if eq - worst_5sl < init_cap * 1.10:
                 buf = buffer_base
 

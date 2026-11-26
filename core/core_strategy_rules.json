@@ -1,7 +1,7 @@
 {
-  "version": "v5.1-7coin-68setups-binance-exact",
-  "updated_utc": "2026-11-26 11:23 UTC",
-  "description": "CHICKTRADE v5.1 — 7 Coins (BTC/ETH/BNB/LINK/XRP/SOL/NEAR) · 68 Tinh Hoa Setups (15m/30m/1h) + 6-Tier M2 Volume (0.50x-1.50x) + Cold-Only Cooling + Binance-Exact Max 5 Open",
+  "version": "v5.1-7coin-68setups-v3-barbell-binance-exact",
+  "updated_utc": "2026-11-26 11:35 UTC",
+  "description": "CHICKTRADE v5.1 — 7 Coins (BTC/ETH/BNB/LINK/XRP/SOL/NEAR) · 68 Setups + V3 Barbell Alpha Volume (0.25x-1.75x by PWR+EPR) + Cold-Only Cooling + Binance-Exact Max 5 Open",
   "unit_config": {
     "mode": "U3_HTF_MACRO_ATR",
     "htf": "4h",
@@ -36,7 +36,7 @@
       "setup_code": "EMA34_W2",
       "status": "CORE",
       "is_scout": false,
-      "v5_tier": "S+ (1.25×)",
+      "v5_tier": "S+ (1.50×)",
       "is_must_order": true,
       "exit_arch": "PARTIAL_NO_MOVE",
       "best_exit_raw": "PARTIAL_NO_MOVE",
@@ -48,11 +48,11 @@
       "leg2_sl_label": "Giữ nguyên SL gốc",
       "allowed_direction": "BOTH",
       "adaptive_volume": {
-        "init_vol_mult": 1.25,
-        "hot_streak_max_mult": 1.25,
+        "init_vol_mult": 1.5,
+        "hot_streak_max_mult": 1.5,
         "cold_streak_3sl_mult": 0.5,
         "cold_only_cooling": true,
-        "tier": "S+ (1.25×)"
+        "tier": "S+ (1.50×)"
       },
       "prior_1y": {
         "trades": 46,
@@ -112,7 +112,7 @@
       "setup_code": "EMA34_W3",
       "status": "CORE",
       "is_scout": false,
-      "v5_tier": "S+ (1.25×)",
+      "v5_tier": "S+ (1.50×)",
       "is_must_order": true,
       "exit_arch": "PARTIAL_MOVE_SL",
       "best_exit_raw": "PARTIAL_M1U",
@@ -124,11 +124,11 @@
       "leg2_sl_label": "Dời SL -1U",
       "allowed_direction": "BOTH",
       "adaptive_volume": {
-        "init_vol_mult": 1.25,
-        "hot_streak_max_mult": 1.25,
+        "init_vol_mult": 1.5,
+        "hot_streak_max_mult": 1.5,
         "cold_streak_3sl_mult": 0.5,
         "cold_only_cooling": true,
-        "tier": "S+ (1.25×)"
+        "tier": "S+ (1.50×)"
       },
       "prior_1y": {
         "trades": 36,
@@ -151,7 +151,7 @@
       "status": "CORE",
       "is_scout": false,
       "v5_tier": "A (1.00×)",
-      "is_must_order": true,
+      "is_must_order": false,
       "exit_arch": "PARTIAL_NO_MOVE",
       "best_exit_raw": "PARTIAL_NO_MOVE",
       "tp1_frac": 0.5,
@@ -455,7 +455,7 @@
       "status": "CORE",
       "is_scout": false,
       "v5_tier": "A (1.00×)",
-      "is_must_order": true,
+      "is_must_order": false,
       "exit_arch": "ONLY_TP1",
       "best_exit_raw": "ONLY_TP1",
       "tp1_frac": 1.0,
@@ -493,7 +493,7 @@
       "status": "CORE",
       "is_scout": false,
       "v5_tier": "A (1.00×)",
-      "is_must_order": true,
+      "is_must_order": false,
       "exit_arch": "ONLY_1R",
       "best_exit_raw": "ONLY_1R",
       "tp1_frac": 1.0,
@@ -530,8 +530,8 @@
       "setup_code": "EMA200_W2",
       "status": "CORE",
       "is_scout": false,
-      "v5_tier": "S+ (1.25×)",
-      "is_must_order": true,
+      "v5_tier": "A (1.00×)",
+      "is_must_order": false,
       "exit_arch": "ONLY_TP1",
       "best_exit_raw": "ONLY_TP1",
       "tp1_frac": 1.0,
@@ -542,11 +542,11 @@
       "leg2_sl_label": "Chốt toàn bộ tại TP1",
       "allowed_direction": "BOTH",
       "adaptive_volume": {
-        "init_vol_mult": 1.25,
-        "hot_streak_max_mult": 1.25,
+        "init_vol_mult": 1.0,
+        "hot_streak_max_mult": 1.0,
         "cold_streak_3sl_mult": 0.5,
         "cold_only_cooling": true,
-        "tier": "S+ (1.25×)"
+        "tier": "A (1.00×)"
       },
       "prior_1y": {
         "trades": 32,
@@ -566,9 +566,9 @@
       "ema": "EMA34",
       "cham": "Chạm 3 (Thuận xu hướng)",
       "setup_code": "EMA34_W3",
-      "status": "CORE",
-      "is_scout": false,
-      "v5_tier": "A (1.00×)",
+      "status": "SCOUT",
+      "is_scout": true,
+      "v5_tier": "B (0.75×)",
       "is_must_order": false,
       "exit_arch": "PARTIAL_BE",
       "best_exit_raw": "PARTIAL_BE",
@@ -580,11 +580,11 @@
       "leg2_sl_label": "Dời SL Hòa vốn (BE)",
       "allowed_direction": "BOTH",
       "adaptive_volume": {
-        "init_vol_mult": 1.0,
-        "hot_streak_max_mult": 1.0,
-        "cold_streak_3sl_mult": 0.5,
+        "init_vol_mult": 0.75,
+        "hot_streak_max_mult": 0.75,
+        "cold_streak_3sl_mult": 0.25,
         "cold_only_cooling": true,
-        "tier": "A (1.00×)"
+        "tier": "B (0.75×)"
       },
       "prior_1y": {
         "trades": 38,
@@ -644,7 +644,7 @@
       "setup_code": "EMA89_W4_REV",
       "status": "SCOUT",
       "is_scout": true,
-      "v5_tier": "B (0.75×)",
+      "v5_tier": "C (0.50×)",
       "is_must_order": false,
       "exit_arch": "PARTIAL_NO_MOVE",
       "best_exit_raw": "PARTIAL_NO_MOVE",
@@ -656,11 +656,11 @@
       "leg2_sl_label": "Giữ nguyên SL gốc",
       "allowed_direction": "BOTH",
       "adaptive_volume": {
-        "init_vol_mult": 0.75,
-        "hot_streak_max_mult": 0.75,
+        "init_vol_mult": 0.5,
+        "hot_streak_max_mult": 0.5,
         "cold_streak_3sl_mult": 0.25,
         "cold_only_cooling": true,
-        "tier": "B (0.75×)"
+        "tier": "C (0.50×)"
       },
       "prior_1y": {
         "trades": 35,
@@ -758,7 +758,7 @@
       "setup_code": "EMA200_W1",
       "status": "CORE",
       "is_scout": false,
-      "v5_tier": "S+ (1.25×)",
+      "v5_tier": "S+ (1.50×)",
       "is_must_order": true,
       "exit_arch": "PARTIAL_NO_MOVE",
       "best_exit_raw": "PARTIAL_NO_MOVE",
@@ -770,11 +770,11 @@
       "leg2_sl_label": "Giữ nguyên SL gốc",
       "allowed_direction": "BOTH",
       "adaptive_volume": {
-        "init_vol_mult": 1.25,
-        "hot_streak_max_mult": 1.25,
+        "init_vol_mult": 1.5,
+        "hot_streak_max_mult": 1.5,
         "cold_streak_3sl_mult": 0.5,
         "cold_only_cooling": true,
-        "tier": "S+ (1.25×)"
+        "tier": "S+ (1.50×)"
       },
       "prior_1y": {
         "trades": 47,
@@ -796,7 +796,7 @@
       "setup_code": "EMA200_W2",
       "status": "CORE",
       "is_scout": false,
-      "v5_tier": "S++ (1.50×)",
+      "v5_tier": "S++ (1.75×)",
       "is_must_order": true,
       "exit_arch": "ONLY_1R",
       "best_exit_raw": "ONLY_1R",
@@ -808,11 +808,11 @@
       "leg2_sl_label": "Chốt toàn bộ tại 1R",
       "allowed_direction": "BOTH",
       "adaptive_volume": {
-        "init_vol_mult": 1.5,
-        "hot_streak_max_mult": 1.5,
+        "init_vol_mult": 1.75,
+        "hot_streak_max_mult": 1.75,
         "cold_streak_3sl_mult": 0.5,
         "cold_only_cooling": true,
-        "tier": "S++ (1.50×)"
+        "tier": "S++ (1.75×)"
       },
       "prior_1y": {
         "trades": 32,
@@ -835,7 +835,7 @@
       "status": "CORE",
       "is_scout": false,
       "v5_tier": "A (1.00×)",
-      "is_must_order": true,
+      "is_must_order": false,
       "exit_arch": "PARTIAL_NO_MOVE",
       "best_exit_raw": "PARTIAL_NO_MOVE",
       "tp1_frac": 0.5,
@@ -872,8 +872,8 @@
       "setup_code": "EMA200_W4_REV",
       "status": "CORE",
       "is_scout": false,
-      "v5_tier": "S+ (1.25×)",
-      "is_must_order": true,
+      "v5_tier": "A (1.00×)",
+      "is_must_order": false,
       "exit_arch": "PARTIAL_MOVE_SL",
       "best_exit_raw": "PARTIAL_M1U",
       "tp1_frac": 0.5,
@@ -884,11 +884,11 @@
       "leg2_sl_label": "Dời SL -1U",
       "allowed_direction": "BOTH",
       "adaptive_volume": {
-        "init_vol_mult": 1.25,
-        "hot_streak_max_mult": 1.25,
+        "init_vol_mult": 1.0,
+        "hot_streak_max_mult": 1.0,
         "cold_streak_3sl_mult": 0.5,
         "cold_only_cooling": true,
-        "tier": "S+ (1.25×)"
+        "tier": "A (1.00×)"
       },
       "prior_1y": {
         "trades": 31,
@@ -910,7 +910,7 @@
       "setup_code": "EMA89_W1",
       "status": "SCOUT",
       "is_scout": true,
-      "v5_tier": "B (0.75×)",
+      "v5_tier": "C (0.50×)",
       "is_must_order": false,
       "exit_arch": "PARTIAL_MOVE_SL",
       "best_exit_raw": "PARTIAL_M1U",
@@ -922,11 +922,11 @@
       "leg2_sl_label": "Dời SL -1U",
       "allowed_direction": "BOTH",
       "adaptive_volume": {
-        "init_vol_mult": 0.75,
-        "hot_streak_max_mult": 0.75,
+        "init_vol_mult": 0.5,
+        "hot_streak_max_mult": 0.5,
         "cold_streak_3sl_mult": 0.25,
         "cold_only_cooling": true,
-        "tier": "B (0.75×)"
+        "tier": "C (0.50×)"
       },
       "prior_1y": {
         "trades": 57,
@@ -946,9 +946,9 @@
       "ema": "EMA89",
       "cham": "Chạm 4 (Đảo chiều)",
       "setup_code": "EMA89_W4_REV",
-      "status": "CORE",
-      "is_scout": false,
-      "v5_tier": "A (1.00×)",
+      "status": "SCOUT",
+      "is_scout": true,
+      "v5_tier": "B (0.75×)",
       "is_must_order": false,
       "exit_arch": "ONLY_TP1",
       "best_exit_raw": "ONLY_TP1",
@@ -960,11 +960,11 @@
       "leg2_sl_label": "Chốt toàn bộ tại TP1",
       "allowed_direction": "BOTH",
       "adaptive_volume": {
-        "init_vol_mult": 1.0,
-        "hot_streak_max_mult": 1.0,
-        "cold_streak_3sl_mult": 0.5,
+        "init_vol_mult": 0.75,
+        "hot_streak_max_mult": 0.75,
+        "cold_streak_3sl_mult": 0.25,
         "cold_only_cooling": true,
-        "tier": "A (1.00×)"
+        "tier": "B (0.75×)"
       },
       "prior_1y": {
         "trades": 30,
@@ -1024,7 +1024,7 @@
       "setup_code": "EMA89_W3",
       "status": "SCOUT",
       "is_scout": true,
-      "v5_tier": "B (0.75×)",
+      "v5_tier": "C (0.50×)",
       "is_must_order": false,
       "exit_arch": "PARTIAL_NO_MOVE",
       "best_exit_raw": "PARTIAL_NO_MOVE",
@@ -1036,11 +1036,11 @@
       "leg2_sl_label": "Giữ nguyên SL gốc",
       "allowed_direction": "BOTH",
       "adaptive_volume": {
-        "init_vol_mult": 0.75,
-        "hot_streak_max_mult": 0.75,
+        "init_vol_mult": 0.5,
+        "hot_streak_max_mult": 0.5,
         "cold_streak_3sl_mult": 0.25,
         "cold_only_cooling": true,
-        "tier": "B (0.75×)"
+        "tier": "C (0.50×)"
       },
       "prior_1y": {
         "trades": 22,
@@ -1063,7 +1063,7 @@
       "status": "CORE",
       "is_scout": false,
       "v5_tier": "A (1.00×)",
-      "is_must_order": true,
+      "is_must_order": false,
       "exit_arch": "ONLY_TP1",
       "best_exit_raw": "ONLY_TP1",
       "tp1_frac": 1.0,
@@ -1098,9 +1098,9 @@
       "ema": "EMA34",
       "cham": "Chạm 3 (Thuận xu hướng)",
       "setup_code": "EMA34_W3",
-      "status": "SCOUT",
-      "is_scout": true,
-      "v5_tier": "B (0.75×)",
+      "status": "CORE",
+      "is_scout": false,
+      "v5_tier": "A (1.00×)",
       "is_must_order": false,
       "exit_arch": "PARTIAL_MOVE_SL",
       "best_exit_raw": "PARTIAL_M1U",
@@ -1112,11 +1112,11 @@
       "leg2_sl_label": "Dời SL -1U",
       "allowed_direction": "BOTH",
       "adaptive_volume": {
-        "init_vol_mult": 0.75,
-        "hot_streak_max_mult": 0.75,
-        "cold_streak_3sl_mult": 0.25,
+        "init_vol_mult": 1.0,
+        "hot_streak_max_mult": 1.0,
+        "cold_streak_3sl_mult": 0.5,
         "cold_only_cooling": true,
-        "tier": "B (0.75×)"
+        "tier": "A (1.00×)"
       },
       "prior_1y": {
         "trades": 63,
@@ -1138,7 +1138,7 @@
       "setup_code": "EMA34_W2",
       "status": "SCOUT",
       "is_scout": true,
-      "v5_tier": "B (0.75×)",
+      "v5_tier": "C (0.50×)",
       "is_must_order": false,
       "exit_arch": "PARTIAL_NO_MOVE",
       "best_exit_raw": "PARTIAL_NO_MOVE",
@@ -1150,11 +1150,11 @@
       "leg2_sl_label": "Giữ nguyên SL gốc",
       "allowed_direction": "BOTH",
       "adaptive_volume": {
-        "init_vol_mult": 0.75,
-        "hot_streak_max_mult": 0.75,
+        "init_vol_mult": 0.5,
+        "hot_streak_max_mult": 0.5,
         "cold_streak_3sl_mult": 0.25,
         "cold_only_cooling": true,
-        "tier": "B (0.75×)"
+        "tier": "C (0.50×)"
       },
       "prior_1y": {
         "trades": 50,
@@ -1480,7 +1480,7 @@
       "setup_code": "EMA34_W3",
       "status": "CORE",
       "is_scout": false,
-      "v5_tier": "S+ (1.25×)",
+      "v5_tier": "S+ (1.50×)",
       "is_must_order": true,
       "exit_arch": "PARTIAL_NO_MOVE",
       "best_exit_raw": "PARTIAL_NO_MOVE",
@@ -1492,11 +1492,11 @@
       "leg2_sl_label": "Giữ nguyên SL gốc",
       "allowed_direction": "BOTH",
       "adaptive_volume": {
-        "init_vol_mult": 1.25,
-        "hot_streak_max_mult": 1.25,
+        "init_vol_mult": 1.5,
+        "hot_streak_max_mult": 1.5,
         "cold_streak_3sl_mult": 0.5,
         "cold_only_cooling": true,
-        "tier": "S+ (1.25×)"
+        "tier": "S+ (1.50×)"
       },
       "prior_1y": {
         "trades": 101,
@@ -1518,8 +1518,8 @@
       "setup_code": "EMA89_W4_REV",
       "status": "CORE",
       "is_scout": false,
-      "v5_tier": "S++ (1.50×)",
-      "is_must_order": true,
+      "v5_tier": "A (1.00×)",
+      "is_must_order": false,
       "exit_arch": "PARTIAL_MOVE_SL",
       "best_exit_raw": "PARTIAL_M1U",
       "tp1_frac": 0.5,
@@ -1530,11 +1530,11 @@
       "leg2_sl_label": "Dời SL -1U",
       "allowed_direction": "BOTH",
       "adaptive_volume": {
-        "init_vol_mult": 1.5,
-        "hot_streak_max_mult": 1.5,
+        "init_vol_mult": 1.0,
+        "hot_streak_max_mult": 1.0,
         "cold_streak_3sl_mult": 0.5,
         "cold_only_cooling": true,
-        "tier": "S++ (1.50×)"
+        "tier": "A (1.00×)"
       },
       "prior_1y": {
         "trades": 24,
@@ -1556,7 +1556,7 @@
       "setup_code": "EMA89_W4_REV",
       "status": "CORE",
       "is_scout": false,
-      "v5_tier": "S+ (1.25×)",
+      "v5_tier": "S+ (1.50×)",
       "is_must_order": true,
       "exit_arch": "ONLY_1R",
       "best_exit_raw": "ONLY_1R",
@@ -1568,11 +1568,11 @@
       "leg2_sl_label": "Chốt toàn bộ tại 1R",
       "allowed_direction": "BOTH",
       "adaptive_volume": {
-        "init_vol_mult": 1.25,
-        "hot_streak_max_mult": 1.25,
+        "init_vol_mult": 1.5,
+        "hot_streak_max_mult": 1.5,
         "cold_streak_3sl_mult": 0.5,
         "cold_only_cooling": true,
-        "tier": "S+ (1.25×)"
+        "tier": "S+ (1.50×)"
       },
       "prior_1y": {
         "trades": 27,
@@ -1633,7 +1633,7 @@
       "status": "CORE",
       "is_scout": false,
       "v5_tier": "A (1.00×)",
-      "is_must_order": true,
+      "is_must_order": false,
       "exit_arch": "PARTIAL_MOVE_SL",
       "best_exit_raw": "PARTIAL_M1U",
       "tp1_frac": 0.5,
@@ -1670,7 +1670,7 @@
       "setup_code": "EMA89_W2",
       "status": "SCOUT",
       "is_scout": true,
-      "v5_tier": "B (0.75×)",
+      "v5_tier": "C (0.50×)",
       "is_must_order": false,
       "exit_arch": "PARTIAL_BE",
       "best_exit_raw": "PARTIAL_BE",
@@ -1682,11 +1682,11 @@
       "leg2_sl_label": "Dời SL Hòa vốn (BE)",
       "allowed_direction": "BOTH",
       "adaptive_volume": {
-        "init_vol_mult": 0.75,
-        "hot_streak_max_mult": 0.75,
+        "init_vol_mult": 0.5,
+        "hot_streak_max_mult": 0.5,
         "cold_streak_3sl_mult": 0.25,
         "cold_only_cooling": true,
-        "tier": "B (0.75×)"
+        "tier": "C (0.50×)"
       },
       "prior_1y": {
         "trades": 39,
@@ -1708,7 +1708,7 @@
       "setup_code": "EMA34_W3",
       "status": "SCOUT",
       "is_scout": true,
-      "v5_tier": "B (0.75×)",
+      "v5_tier": "C (0.50×)",
       "is_must_order": false,
       "exit_arch": "PARTIAL_BE",
       "best_exit_raw": "PARTIAL_BE",
@@ -1720,11 +1720,11 @@
       "leg2_sl_label": "Dời SL Hòa vốn (BE)",
       "allowed_direction": "BOTH",
       "adaptive_volume": {
-        "init_vol_mult": 0.75,
-        "hot_streak_max_mult": 0.75,
+        "init_vol_mult": 0.5,
+        "hot_streak_max_mult": 0.5,
         "cold_streak_3sl_mult": 0.25,
         "cold_only_cooling": true,
-        "tier": "B (0.75×)"
+        "tier": "C (0.50×)"
       },
       "prior_1y": {
         "trades": 35,
@@ -1820,9 +1820,9 @@
       "ema": "EMA34",
       "cham": "Chạm 3 (Thuận xu hướng)",
       "setup_code": "EMA34_W3",
-      "status": "CORE",
-      "is_scout": false,
-      "v5_tier": "A (1.00×)",
+      "status": "SCOUT",
+      "is_scout": true,
+      "v5_tier": "B (0.75×)",
       "is_must_order": false,
       "exit_arch": "ONLY_1R",
       "best_exit_raw": "ONLY_1R",
@@ -1834,11 +1834,11 @@
       "leg2_sl_label": "Chốt toàn bộ tại 1R",
       "allowed_direction": "BOTH",
       "adaptive_volume": {
-        "init_vol_mult": 1.0,
-        "hot_streak_max_mult": 1.0,
-        "cold_streak_3sl_mult": 0.5,
+        "init_vol_mult": 0.75,
+        "hot_streak_max_mult": 0.75,
+        "cold_streak_3sl_mult": 0.25,
         "cold_only_cooling": true,
-        "tier": "A (1.00×)"
+        "tier": "B (0.75×)"
       },
       "prior_1y": {
         "trades": 35,
@@ -2050,7 +2050,7 @@
       "setup_code": "EMA34_W2",
       "status": "CORE",
       "is_scout": false,
-      "v5_tier": "S+ (1.25×)",
+      "v5_tier": "S++ (1.75×)",
       "is_must_order": true,
       "exit_arch": "PARTIAL_NO_MOVE",
       "best_exit_raw": "PARTIAL_NO_MOVE",
@@ -2062,11 +2062,11 @@
       "leg2_sl_label": "Giữ nguyên SL gốc",
       "allowed_direction": "BOTH",
       "adaptive_volume": {
-        "init_vol_mult": 1.25,
-        "hot_streak_max_mult": 1.25,
+        "init_vol_mult": 1.75,
+        "hot_streak_max_mult": 1.75,
         "cold_streak_3sl_mult": 0.5,
         "cold_only_cooling": true,
-        "tier": "S+ (1.25×)"
+        "tier": "S++ (1.75×)"
       },
       "prior_1y": {
         "trades": 49,
@@ -2088,7 +2088,7 @@
       "setup_code": "EMA89_W2",
       "status": "CORE",
       "is_scout": false,
-      "v5_tier": "S+ (1.25×)",
+      "v5_tier": "S+ (1.50×)",
       "is_must_order": true,
       "exit_arch": "PARTIAL_MOVE_SL",
       "best_exit_raw": "PARTIAL_M1U",
@@ -2100,11 +2100,11 @@
       "leg2_sl_label": "Dời SL -1U",
       "allowed_direction": "BOTH",
       "adaptive_volume": {
-        "init_vol_mult": 1.25,
-        "hot_streak_max_mult": 1.25,
+        "init_vol_mult": 1.5,
+        "hot_streak_max_mult": 1.5,
         "cold_streak_3sl_mult": 0.5,
         "cold_only_cooling": true,
-        "tier": "S+ (1.25×)"
+        "tier": "S+ (1.50×)"
       },
       "prior_1y": {
         "trades": 27,
@@ -2316,7 +2316,7 @@
       "setup_code": "EMA89_W2",
       "status": "SCOUT",
       "is_scout": true,
-      "v5_tier": "B (0.75×)",
+      "v5_tier": "C (0.50×)",
       "is_must_order": false,
       "exit_arch": "PARTIAL_MOVE_SL",
       "best_exit_raw": "PARTIAL_M1U",
@@ -2328,11 +2328,11 @@
       "leg2_sl_label": "Dời SL -1U",
       "allowed_direction": "BOTH",
       "adaptive_volume": {
-        "init_vol_mult": 0.75,
-        "hot_streak_max_mult": 0.75,
+        "init_vol_mult": 0.5,
+        "hot_streak_max_mult": 0.5,
         "cold_streak_3sl_mult": 0.25,
         "cold_only_cooling": true,
-        "tier": "B (0.75×)"
+        "tier": "C (0.50×)"
       },
       "prior_1y": {
         "trades": 51,
@@ -2354,7 +2354,7 @@
       "setup_code": "EMA89_W4_REV",
       "status": "SCOUT",
       "is_scout": true,
-      "v5_tier": "B (0.75×)",
+      "v5_tier": "C (0.50×)",
       "is_must_order": false,
       "exit_arch": "ONLY_1R",
       "best_exit_raw": "ONLY_1R",
@@ -2366,11 +2366,11 @@
       "leg2_sl_label": "Chốt toàn bộ tại 1R",
       "allowed_direction": "BOTH",
       "adaptive_volume": {
-        "init_vol_mult": 0.75,
-        "hot_streak_max_mult": 0.75,
+        "init_vol_mult": 0.5,
+        "hot_streak_max_mult": 0.5,
         "cold_streak_3sl_mult": 0.25,
         "cold_only_cooling": true,
-        "tier": "B (0.75×)"
+        "tier": "C (0.50×)"
       },
       "prior_1y": {
         "trades": 25,
@@ -2430,7 +2430,7 @@
       "setup_code": "EMA34_W2",
       "status": "SCOUT",
       "is_scout": true,
-      "v5_tier": "B (0.75×)",
+      "v5_tier": "C (0.50×)",
       "is_must_order": false,
       "exit_arch": "PARTIAL_NO_MOVE",
       "best_exit_raw": "PARTIAL_NO_MOVE",
@@ -2442,11 +2442,11 @@
       "leg2_sl_label": "Giữ nguyên SL gốc",
       "allowed_direction": "BOTH",
       "adaptive_volume": {
-        "init_vol_mult": 0.75,
-        "hot_streak_max_mult": 0.75,
+        "init_vol_mult": 0.5,
+        "hot_streak_max_mult": 0.5,
         "cold_streak_3sl_mult": 0.25,
         "cold_only_cooling": true,
-        "tier": "B (0.75×)"
+        "tier": "C (0.50×)"
       },
       "prior_1y": {
         "trades": 132,
@@ -2468,7 +2468,7 @@
       "setup_code": "EMA34_W3",
       "status": "SCOUT",
       "is_scout": true,
-      "v5_tier": "B (0.75×)",
+      "v5_tier": "C (0.50×)",
       "is_must_order": false,
       "exit_arch": "PARTIAL_NO_MOVE",
       "best_exit_raw": "PARTIAL_NO_MOVE",
@@ -2480,11 +2480,11 @@
       "leg2_sl_label": "Giữ nguyên SL gốc",
       "allowed_direction": "BOTH",
       "adaptive_volume": {
-        "init_vol_mult": 0.75,
-        "hot_streak_max_mult": 0.75,
+        "init_vol_mult": 0.5,
+        "hot_streak_max_mult": 0.5,
         "cold_streak_3sl_mult": 0.25,
         "cold_only_cooling": true,
-        "tier": "B (0.75×)"
+        "tier": "C (0.50×)"
       },
       "prior_1y": {
         "trades": 99,
@@ -2544,7 +2544,7 @@
       "setup_code": "EMA34_W3",
       "status": "SCOUT",
       "is_scout": true,
-      "v5_tier": "B (0.75×)",
+      "v5_tier": "C (0.50×)",
       "is_must_order": false,
       "exit_arch": "PARTIAL_NO_MOVE",
       "best_exit_raw": "PARTIAL_NO_MOVE",
@@ -2556,11 +2556,11 @@
       "leg2_sl_label": "Giữ nguyên SL gốc",
       "allowed_direction": "BOTH",
       "adaptive_volume": {
-        "init_vol_mult": 0.75,
-        "hot_streak_max_mult": 0.75,
+        "init_vol_mult": 0.5,
+        "hot_streak_max_mult": 0.5,
         "cold_streak_3sl_mult": 0.25,
         "cold_only_cooling": true,
-        "tier": "B (0.75×)"
+        "tier": "C (0.50×)"
       },
       "prior_1y": {
         "trades": 55,

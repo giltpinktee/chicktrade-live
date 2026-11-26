@@ -44,6 +44,21 @@ SEVEN_COINS = SIX_COINS + ["NEARUSDT"]
 TFS = ("15m", "30m", "1h")
 
 
+def v3_barbell_tier(pwr: float, epr: float, n: int) -> Tuple[float, str]:
+    """V3 Barbell Alpha 6-tier Volume (PWR + Edge-per-Risk EPR = avg_u / sl_u)."""
+    if pwr >= 69.0 and epr >= 0.28 and n >= 25:
+        return 1.75, "S++ (1.75×)"
+    if pwr >= 65.5 and epr >= 0.22 and n >= 25:
+        return 1.50, "S+ (1.50×)"
+    if pwr >= 61.5 and epr >= 0.17 and n >= 20:
+        return 1.00, "A (1.00×)"
+    if pwr >= 58.5 and epr >= 0.13:
+        return 0.75, "B (0.75×)"
+    if epr >= 0.10:
+        return 0.50, "C (0.50×)"
+    return 0.25, "D (0.25×)"
+
+
 def load_7coin_rules() -> Tuple[List[dict], List[dict]]:
     with open(RULES_6C_JSON, "r", encoding="utf-8") as f:
         r6_src = json.load(f)
@@ -108,23 +123,38 @@ def main():
     t_start = int(datetime(2023, 11, 1, tzinfo=timezone.utc).timestamp() * 1000)
     t_end = int(datetime(2026, 11, 1, tzinfo=timezone.utc).timestamp() * 1000)
 
-    # Evaluate 68 setups once, filter for 6-coin baseline
-    s4_68, m4_68, s5_68, m5_68, stats_68 = eval_rules_binance_exact(rules_68, market, funding_map, sig_map, t_start, t_end)
+    # Evaluate 68 setups once under Binance-Exact, then apply V3 Barbell Alpha (0.25x -> 1.75x)
+    s4_68_raw, m4_68, s5_68_raw, m5_68, stats_68 = eval_rules_binance_exact(rules_68, market, funding_map, sig_map, t_start, t_end)
+
+    v3_vol_map: Dict[Tuple[str, str, str], Tuple[float, str]] = {}
+    for r in rules_68:
+        k = (r["sym"], r["tf"], r["setup"])
+        s4 = stats_68[k]["S4_REAL_FUNDING"]
+        epr = float(s4["avg_u"]) / float(r["sl_u"]) if r["sl_u"] > 0 else 0.0
+        vm, tier_lbl = v3_barbell_tier(float(s4["pwr"]), epr, int(s4["n"]))
+        r["vol_mult"] = vm
+        r["m2_tier"] = tier_lbl
+        r["is_must"] = vm >= 1.50
+        v3_vol_map[k] = (vm, tier_lbl)
+
+    s4_68 = [{**t, "vol_mult": v3_vol_map[(t["sym"], t["tf"], t["setup"])][0]} for t in s4_68_raw]
+    s5_68 = [{**t, "vol_mult": v3_vol_map[(t["sym"], t["tf"], t["setup"])][0]} for t in s5_68_raw]
+
     keys_6c = {(r["sym"], r["tf"], r["setup"]) for r in rules_6c}
     s4_6 = [t for t in s4_68 if (t["sym"], t["tf"], t["setup"]) in keys_6c]
     s5_6 = [t for t in s5_68 if (t["sym"], t["tf"], t["setup"]) in keys_6c]
     m4_6 = sum(stats_68[k]["S4_REAL_FUNDING"]["missed"] for k in keys_6c)
     m5_6 = sum(stats_68[k]["S5_PESSIMISTIC"]["missed"] for k in keys_6c)
 
-    p6_s4_400 = simulate_v5_binance_exact(s4_6, m4_6, 400, 250, False, 5, 3)
-    p6_s4_tur = simulate_v5_binance_exact(s4_6, m4_6, 400, 250, True, 5, 3)
-    p6_s5_400 = simulate_v5_binance_exact(s5_6, m5_6, 400, 250, False, 5, 3)
-    p6_s5_tur = simulate_v5_binance_exact(s5_6, m5_6, 400, 250, True, 5, 3)
+    p6_s4_400 = simulate_v5_binance_exact(s4_6, m4_6, 400, 250, False, 5, 3, use_dd_throttle=False)
+    p6_s4_tur = simulate_v5_binance_exact(s4_6, m4_6, 400, 250, True, 5, 3, use_dd_throttle=False)
+    p6_s5_400 = simulate_v5_binance_exact(s5_6, m5_6, 400, 250, False, 5, 3, use_dd_throttle=False)
+    p6_s5_tur = simulate_v5_binance_exact(s5_6, m5_6, 400, 250, True, 5, 3, use_dd_throttle=False)
 
-    p7_s4_400 = simulate_v5_binance_exact(s4_68, m4_68, 400, 250, False, 5, 3)
-    p7_s4_tur = simulate_v5_binance_exact(s4_68, m4_68, 400, 250, True, 5, 3)
-    p7_s5_400 = simulate_v5_binance_exact(s5_68, m5_68, 400, 250, False, 5, 3)
-    p7_s5_tur = simulate_v5_binance_exact(s5_68, m5_68, 400, 250, True, 5, 3)
+    p7_s4_400 = simulate_v5_binance_exact(s4_68, m4_68, 400, 250, False, 5, 3, use_dd_throttle=False)
+    p7_s4_tur = simulate_v5_binance_exact(s4_68, m4_68, 400, 250, True, 5, 3, use_dd_throttle=False)
+    p7_s5_400 = simulate_v5_binance_exact(s5_68, m5_68, 400, 250, False, 5, 3, use_dd_throttle=False)
+    p7_s5_tur = simulate_v5_binance_exact(s5_68, m5_68, 400, 250, True, 5, 3, use_dd_throttle=False)
 
     print("\n================ CHICKTRADE v5.1 — 7 COIN (68 SETUPS · BINANCE-EXACT MAX 5 OPEN) ================")
     print(f"  [S4] Bao 400G : ${p7_s4_400['final_eq']:>10,.2f} ({p7_s4_400['roi_pct']:+7.1f}%) | DD={p7_s4_400['max_dd_pct']:6.2f}% | Calmar={p7_s4_400['calmar']:>5.1f} | PF={p7_s4_400['pf']} | PWR={p7_s4_400['pwr']}% | N={p7_s4_400['trades']} | Fund=${p7_s4_400['funding_usd']:,.0f}")
@@ -289,11 +319,12 @@ def build_html(data: dict) -> None:
   .pos {{ color: var(--emerald); font-weight: 700; }}
   .neg {{ color: var(--rose); font-weight: 700; }}
   .badge {{ display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; font-family: 'JetBrains Mono', monospace; }}
-  .b-v150 {{ background: #FEF3C7; color: #92400E; }}
-  .b-v125 {{ background: #D1FAE5; color: #065F46; }}
+  .b-v175 {{ background: #FEF3C7; color: #92400E; border: 1px solid #F59E0B; }}
+  .b-v150 {{ background: #D1FAE5; color: #065F46; }}
   .b-v100 {{ background: #E0F2FE; color: #075985; }}
   .b-v075 {{ background: #EDE9FE; color: #5B21B6; }}
   .b-v050 {{ background: #F1F5F9; color: #475569; }}
+  .b-v025 {{ background: #FEE2E2; color: #991B1B; }}
   .must-badge {{ display: inline-block; margin-left: 6px; background: #FEF3C7; color: #B45309; border: 1px solid #FCD34D; font-size: 10px; font-weight: 800; padding: 1px 6px; border-radius: 4px; }}
   .new-tag {{ display: inline-block; margin-left: 5px; background: #DCFCE7; color: #166534; font-size: 10px; font-weight: 800; padding: 1px 6px; border-radius: 4px; }}
   .calc-controls {{ display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 14px; }}
@@ -310,8 +341,8 @@ def build_html(data: dict) -> None:
 <header class="hero-bar">
   <div class="hero-inner">
     <div class="hero-title">
-      <h1>🏆 CHICKTRADE NEW SETUP v5.1 — 7 COIN (68 Setup Tinh Hoa · Thêm NEAR · Binance-Exact Max 5 Lệnh)</h1>
-      <p>6 Coin gốc (<code>53</code>) + <b>NEARUSDT</b> (<code>15</code>) · Kiểm định 36 tháng (<code>2023-11 → 2026-10</code>) · Chuẩn <b>Binance USD-M Futures thật</b> (MaxDD kỷ lục <code>-8.56%</code> · Calmar <code>160.0</code> · 0 rủi ro Privacy Coin)</p>
+      <h1>🏆 CHICKTRADE NEW SETUP v5.1 — 7 COIN (68 Setup · V3 Barbell 0.25×–1.75× · 400G ↔ Turbo 250G)</h1>
+      <p>6 Coin gốc (<code>53</code>) + <b>NEARUSDT</b> (<code>15</code>) · Kiểm định 36 tháng (<code>2023-11 → 2026-10</code>) · Chuẩn <b>Binance USD-M Futures thật</b> (Max 5 lệnh · Khóa cứng Volume theo Bậc S2 · Giáp 110% · Tự Học Chậm)</p>
     </div>
     <div class="hero-actions">
       <button type="button" class="dict-toggle-btn" onclick="toggleGlossary()">📖 Tiêu Chí Binance-Exact</button>
@@ -400,8 +431,8 @@ def build_html(data: dict) -> None:
     <div class="section-card">
       <div class="section-head">
         <div>
-          <h3>🎚️ Phân Bổ 6 Nấc Volume M2 Trên 68 Setup (7 Coin)</h3>
-          <p class="section-sub">Dồn lực vào siêu phẩm (PWR ≥ 65%) và hạ gọn các setup biên vừa về 0.50×–0.75×</p>
+          <h3>🎚️ Phân Bổ 6 Nấc Volume V3 Barbell Alpha Trên 68 Setup (7 Coin)</h3>
+          <p class="section-sub">Dồn lực vào siêu phẩm Edge/Risk dày (<code>1.50×–1.75×</code>) và ép kèo SL rộng/biên mỏng về <code>0.25×–0.50×</code> (Vol TB tĩnh chỉ <code>0.82×</code>)</p>
         </div>
       </div>
       <div class="grid-5" id="vol-dist-grid"></div>
@@ -437,7 +468,7 @@ def build_html(data: dict) -> None:
       <div class="tbl-wrap">
         <table>
           <thead>
-            <tr><th>Coin</th><th>Số Setup</th><th>THẤY LÀ QUẤT (≥1.25×)</th><th>Vol TB</th><th>Tổng Net S4 (U)</th><th>Trần 20×</th><th>Slip S4</th><th>1U M15</th><th>1U M30</th><th>1U 1H</th></tr>
+            <tr><th>Coin</th><th>Số Setup</th><th>THẤY LÀ QUẤT (≥1.50×)</th><th>Vol TB</th><th>Tổng Net S4 (U)</th><th>Trần 20×</th><th>Slip S4</th><th>1U M15</th><th>1U M30</th><th>1U 1H</th></tr>
           </thead>
           <tbody id="coin-sum-tbody"></tbody>
         </table>
@@ -487,14 +518,14 @@ def build_html(data: dict) -> None:
       <div class="calc-controls">
         <div class="calc-field"><label>Vốn gốc ($)</label><input type="number" id="s2-base" value="10000" min="500" step="1000" oninput="renderS2()"></div>
         <div class="calc-field"><label>Bậc S2 (0 → 200)</label><input type="number" id="s2-step" value="0" min="0" max="200" step="1" oninput="renderS2()"></div>
-        <div class="calc-field"><label>Nấc Volume M2</label>
+        <div class="calc-field"><label>Nấc Volume V3 Barbell</label>
           <select id="s2-vol" onchange="renderS2()">
-            <option value="1.5">1.50× (S++ · PWR ≥ 70%)</option>
-            <option value="1.25">1.25× (S+ · PWR ≥ 65%)</option>
-            <option value="1.0" selected>1.00× (A · PWR ≥ 61%)</option>
-            <option value="0.75">0.75× (B · PWR ≥ 58%)</option>
-            <option value="0.5">0.50× (C · PWR ≥ 55%)</option>
-            <option value="0.25">0.25× (D / Hạ lạnh)</option>
+            <option value="1.75">1.75× (S++ · PWR ≥ 69% &amp; EPR ≥ 0.28)</option>
+            <option value="1.5">1.50× (S+ · PWR ≥ 65.5% &amp; EPR ≥ 0.22)</option>
+            <option value="1.0" selected>1.00× (A · PWR ≥ 61.5% &amp; EPR ≥ 0.17)</option>
+            <option value="0.75">0.75× (B · PWR ≥ 58.5% &amp; EPR ≥ 0.13)</option>
+            <option value="0.5">0.50× (C · EPR ≥ 0.10)</option>
+            <option value="0.25">0.25× (D · SL rộng / Hạ lạnh)</option>
           </select>
         </div>
       </div>
@@ -504,8 +535,8 @@ def build_html(data: dict) -> None:
       <div class="section-head"><div><h3>🛡️ Quy Tắc Vận Hành Khóa Cứng Binance-Exact v5.1 (7 Coin)</h3></div></div>
       <div class="grid-2">
         <div class="mech-card" style="border-top-color:#059669;"><h4>1. Khóa Cứng Max 5 Lệnh Mở &amp; 12% Tổng Rủi Ro</h4><p>Trên toàn bộ 7 coin, tại mọi thời điểm chỉ giữ tối đa <b>5 vị thế mở</b>, tối đa <b>1 vị thế/coin</b> (Binance One-Way Mode), tối đa <b>3 vị thế cùng chiều</b>. Tổng rủi ro SL đồng thời bị khóa trần ≤ <b>12% vốn</b>.</p></div>
-        <div class="mech-card" style="border-top-color:#D97706;"><h4>2. Thang 6 Nấc M2 + Van Chỉ Hạ Lạnh (Cold-Only)</h4><p>Mỗi setup có trần Volume tĩnh cố định theo Profit WR (<code>0.50× → 1.50×</code>). Dính 3 SL liên tiếp tự hạ về <code>0.50×</code>, 4 SL về <code>0.25×</code> tới khi thắng lại; không bao giờ đẩy nóng vượt trần.</p></div>
-        <div class="mech-card" style="border-top-color:#0284C7;"><h4>3. Auto-Turbo 250G (+25% Bật · Sàn 110%)</h4><p>Mặc định chạy <b>Bao 400G</b>. Chỉ kích hoạt <b>Auto-Turbo 250G</b> khi vốn ≥ <code>$12,500 (+25%)</code> và kiểm tra trước mỗi lệnh sao cho 5 lệnh SL cùng lúc vẫn giữ ≥ <code>$11,000 (110%)</code>.</p></div>
+        <div class="mech-card" style="border-top-color:#D97706;"><h4>2. Thang 6 Nấc V3 Barbell + Tự Học Chậm (Slow Bayesian)</h4><p>Mỗi setup khởi đầu bằng ký ức 3 năm (<code>0.25× → 1.75×</code> theo PWR + EPR). Khi chạy thật, mọi lệnh đóng được ghi vào <code>core/live_learning_state.json</code> với trọng số nền <code>prior = 60</code> (tối thiểu <code>15</code> lệnh thật mới đổi bậc) + Van Hạ Lạnh ở 3–4 SL liên tiếp.</p></div>
+        <div class="mech-card" style="border-top-color:#0284C7;"><h4>3. Khóa Cứng Volume Bậc S2 + Auto-Turbo 250G (Giáp 110%)</h4><p>Trong cùng 1 Bậc S2, Volume giữ <b>cố định tuyệt đối</b> (không cắt nhỏ theo equity). Mặc định chạy <b>Bao 400G</b>; bật <b>Turbo 250G</b> khi lãi ≥ <code>+25%</code> (<code>$12,500</code>) và chỉ gạt về <b>400G</b> nếu chạm sàn giáp <code>110%</code> (<code>$11,000</code> — thua cả 5 lệnh SL cùng lúc vẫn giữ ≥ +10% lãi).</p></div>
         <div class="mech-card" style="border-top-color:#6D28D9;"><h4>4. Phanh 2-SL Nhân Quả &amp; Giới Hạn Notional 20×</h4><p>Dính 2 SL gốc liên tiếp (nhóm ≥0.75×) bật phanh đánh nháp tối đa 72h (chỉ mở khóa khi lệnh nháp đóng cửa có lãi). Áp đúng trần notional 20× sàn Binance cho từng mã (BTC/ETH $300k, Alt $150k, NEAR $100k).</p></div>
       </div>
     </div>
@@ -552,11 +583,12 @@ function setSc(m, btn) {{
 }}
 
 function volBadgeClass(v) {{
+  if (v >= 1.75) return 'b-v175';
   if (v >= 1.5) return 'b-v150';
-  if (v >= 1.25) return 'b-v125';
   if (v >= 1.0) return 'b-v100';
   if (v >= 0.75) return 'b-v075';
-  return 'b-v050';
+  if (v >= 0.5) return 'b-v050';
+  return 'b-v025';
 }}
 
 function renderDualChartYearly() {{
@@ -653,11 +685,12 @@ function renderDualChartYearly() {{
 function renderOverview() {{
   renderDualChartYearly();
   const tiers = [
-    ['S++ (1.50×)', 'PWR ≥ 70%', '#D97706'],
-    ['S+ (1.25×)', 'PWR 65–70%', '#059669'],
-    ['A (1.00×)', 'PWR 61–65%', '#0284C7'],
-    ['B (0.75×)', 'PWR 58–61%', '#6D28D9'],
-    ['C (0.50×)', 'PWR 55–58%', '#64748B'],
+    ['S++ (1.75×)', 'PWR≥69% · EPR≥0.28', '#B45309'],
+    ['S+ (1.50×)', 'PWR≥65.5% · EPR≥0.22', '#059669'],
+    ['A (1.00×)', 'PWR≥61.5% · EPR≥0.17', '#0284C7'],
+    ['B (0.75×)', 'PWR≥58.5% · EPR≥0.13', '#6D28D9'],
+    ['C (0.50×)', 'EPR ≥ 0.10', '#475569'],
+    ['D (0.25×)', 'SL rộng / Biên mỏng', '#DC2626'],
   ];
   document.getElementById('vol-dist-grid').innerHTML = tiers.map(([k, desc, col]) => `
     <div class="m-item" style="background:#FFFFFF;border-top:3px solid ${{col}};">
