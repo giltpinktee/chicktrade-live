@@ -1,16 +1,16 @@
-# 🏆 CHICKTRADE v6.0 — 7-Coin Systematic Futures Engine (Binance-Exact)
+# 🏆 CHICKTRADE v6.1 — 7-Coin Systematic Futures Engine (Binance-Exact · 3-Tier Storm Guard)
 
 > **For AI Agents & Developers:** Start with [AGENTS.md](AGENTS.md) for the complete mathematical specification, execution rules, and design history, and [docs/CHICKTRADE_SETUP_AND_VOLUME_FRAMEWORK.md](docs/CHICKTRADE_SETUP_AND_VOLUME_FRAMEWORK.md) for the 5-Gate Setup Selection & V3 Barbell Volume playbook.
 
 ## Key Performance (36 Months · `2023-11 → 2026-10` · `$10,000` Start · Max 5 Open)
-Evaluated on the Argon-audited **Binance USD-M Futures Exact** simulator (`7 Coins`: `BTC, ETH, BNB, LINK, XRP, SOL, NEAR` · `68 ACTIVE + 1 BENCH_WATCH`, zero lookahead, true LIMIT IOC `±0.25U`, Gap-Through SL, no same-bar TP1+TP2, real 8h Binance Funding, per-symbol 20x notional caps, 12% max concurrent SL risk):
+Evaluated on the Argon-audited **Binance USD-M Futures Exact** simulator (`7 Coins`: `BTC, ETH, BNB, LINK, XRP, SOL, NEAR` · `68 ACTIVE + 1 BENCH_WATCH`, **3-Tier Storm Guard T1 `4h / 12h / 24h`**, zero lookahead, true LIMIT IOC `±0.25U`, Gap-Through SL, no same-bar TP1+TP2, real 8h Binance Funding, per-symbol 20x notional caps, 12% max concurrent SL risk):
 
 | Mode | S4 Final Equity (ROI) | S4 MaxDD | S4 Calmar | S4 PF / PWR | S5 Pessimistic (DD) |
 |---|---:|---:|---:|---|---:|
-| **Bao 400G** *(Safe · S2 Step-Locked)* | **`$351,815` (`+3,418%`)** | **`-11.56%`** | `295.7` | **1.66 / 62.4%** | `$268,624` (`-12.05%`) |
-| **Turbo 350G** *(Mid-Safe)* | `$441,897` (`+4,319%`) | `-13.34%` | `323.8` | 1.59 | `$353,161` (`-14.11%`) |
-| **Turbo 320G** *(Peak Calmar < 15% DD)* | `$490,897` (`+4,809%`) | `-14.27%` | **`337.0`** | 1.54 | `$398,209` (`-15.19%`) |
-| **Auto-Turbo 250G** *(ON ≥ +25% · 110% Armor)* | **`$618,457` (`+6,085%`)** | `-18.98%` | `320.6` | 1.46 / 59.4% | `$494,436` (`-19.43%`) |
+| **Bao 400G** *(Safe · S2 Step-Locked)* | **`$233,697` (`+2,237%`)** | **`-11.26%`** | `198.6` | **1.63 / 61.9%** | `$184,511` (`-11.65%`) |
+| **Turbo 350G** *(Mid-Safe)* | `$316,652` (`+3,067%`) | `-13.52%` | `226.9` | 1.61 | `$250k+` |
+| **Turbo 320G** *(Balanced)* | `$375,967` (`+3,660%`) | `-13.63%` | `268.5` | 1.59 | `$295k+` |
+| **Auto-Turbo 250G** *(ON ≥ +25% · 110% Armor)* | **`$551,869` (`+5,419%`)** | **`-15.32%`** | **`353.7`** | **1.54** | **`$442,558` (`-16.67%`)** |
 
 ## Core Architecture Highlights
 - **V3 Barbell Alpha Volume (`0.25× → 1.75×`):** Allocates risk by `PWR` + `Edge-per-Risk (EPR = avg_u / sl_u)` (`corr(RecoveryFactor) = +0.735`), keeping static average volume at just `0.82×` while doubling profit.

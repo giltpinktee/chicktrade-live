@@ -497,9 +497,9 @@ def sync_core_rules(enriched_68: List[dict]) -> None:
         })
 
     doc = {
-        "version": "v6.0-7coin-68active-1bench-v3barbell-binance-exact",
+        "version": "v6.1-7coin-68active-1bench-t1storm-v3barbell",
         "updated_utc": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
-        "description": "CHICKTRADE v6.0 — 7 Coins (BTC/ETH/BNB/LINK/XRP/SOL/NEAR) · 68 ACTIVE + 1 BENCH_WATCH · V3 Barbell Alpha (0.25x-1.75x) · S2-Locked 400G/Turbo 250G · Slow Bayesian + Shadow Bench-Watch",
+        "description": "CHICKTRADE v6.1 — 7 Coins (BTC/ETH/BNB/LINK/XRP/SOL/NEAR) · 68 ACTIVE + 1 BENCH_WATCH · V3 Barbell Alpha (0.25x-1.75x) · S2-Locked 400G/Turbo 250G · 3-Tier Storm Guard (4h/12h/24h)",
         "unit_config": {
             "mode": "U3_HTF_MACRO_ATR", "htf": "4h", "atr_period": 14, "ema_smooth": 20,
             "gamma_tf": {"5m": 0.17, "15m": 0.29, "30m": 0.41, "1h": 0.59}, "min_u_pct": 0.0008,
@@ -730,7 +730,7 @@ def build_html_v6(data: dict) -> None:
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CHICKTRADE v6.0 MASTER — 7 COIN (68 Active + 1 Bench-Watch · Binance-Exact)</title>
+<title>CHICKTRADE v6.1 MASTER — 7 COIN (68 Active + 1 Bench-Watch · Né Bão 3 Cấp 4h/12h/24h)</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
 <style>
@@ -812,11 +812,11 @@ def build_html_v6(data: dict) -> None:
 <header class="hero-bar">
   <div class="hero-inner">
     <div class="hero-title">
-      <h1>🏆 CHICKTRADE v6.0 MASTER — 7 COIN (68 Active + 1 Bench-Watch · Binance-Exact)</h1>
-      <p>Hệ thống hoàn chỉnh: <b>V3 Barbell Volume (<code>0.25×–1.75×</code>)</b> · <b>Khóa cứng Bậc S2 (`400G ↔ Turbo 250G`, Giáp 110%)</b> · <b>Tự Học Chậm + Ghế Dự Bị Hồi Sinh</b> · Kiểm định 36 tháng (<code>2023-11 → 2026-10</code>)</p>
+      <h1>🏆 CHICKTRADE v6.1 MASTER — 7 COIN (68 Active + 1 Bench-Watch · Né Bão 3 Cấp 4h/12h/24h)</h1>
+      <p>Hệ thống hoàn chỉnh: <b>V3 Barbell Volume (<code>0.25×–1.75×</code>)</b> · <b>Né Bão 3 Cấp T1 (<code>4h / 12h / 24h</code>)</b> · <b>Khóa cứng Bậc S2 (<code>400G ↔ Turbo 250G</code>, Giáp 110%)</b> · <b>Tự Học Chậm + Ghế Dự Bị</b> · Kiểm định 36 tháng (<code>2023-11 → 2026-10</code>)</p>
     </div>
     <div class="hero-actions">
-      <span class="ver-badge">v6.0 MASTER · 7 COINS · 68+1 SETUPS · <span id="gen-utc">--</span></span>
+      <span class="ver-badge">v6.1 MASTER · T1 STORM · 68+1 SETUPS · <span id="gen-utc">--</span></span>
     </div>
   </div>
 </header>
@@ -942,8 +942,8 @@ def build_html_v6(data: dict) -> None:
           <p>Loại sạch khung <code>5m</code> (nhiễu phí), loại kèo cày lệnh biên mỏng (<code>N ≥ 60</code> mà <code>EPR &lt; 0.11</code>), loại kèo yếu trước trượt giá (<code>S5res &lt; 68%</code>). Loại <code>AVAX</code> (loãng danh mục) &amp; <code>ZEC</code> (nghẽn trần 5 lệnh + rủi ro Privacy); giữ <b>NEAR</b> giúp kéo DD giảm từ <code>-10.1% → -8.56%</code>.</p>
         </div>
         <div class="mech-card" style="border-top-color:#D97706;">
-          <h4>Bước 3 · Chuẩn Hóa Binance-Exact &amp; V3 Barbell</h4>
-          <p>Khóa 7 chuẩn khớp lệnh thật (Max 5 lệnh, 1/coin, ≤ 3 cùng chiều, phanh 2-SL nhân quả 0 lookahead, IOC thật, Gap-SL, không ăn kép TP1+TP2 cùng nến, Funding 8h thật). Tái phân bổ Volume <b>V3 Barbell</b> tăng gấp đôi lợi nhuận mà không tăng đòn bẩy trung bình.</p>
+          <h4>Bước 3 · Chuẩn Binance-Exact, Né Bão 3 Cấp T1 &amp; V3 Barbell</h4>
+          <p>Khóa 7 chuẩn khớp lệnh thật (Max 5 lệnh, 1/coin, ≤ 3 cùng chiều, phanh 2-SL nhân quả, IOC thật, Gap-SL, Funding 8h thật). Nâng cấp <b>Né Bão 3 Cấp T1</b>: Bão nhẹ <code>4h</code> · Bão vừa (Sweep ≥ 2.8 ATR / ATR ≥ 2.2) <code>12h</code> · Siêu Bão (ATR ≥ 2.8 / Sweep ≥ 4.0 ATR) <code>24h</code> — kéo DD Bao 400G xuống dưới <code>10%</code> và Turbo 250G xuống <code>~15.6%</code>.</p>
         </div>
       </div>
     </div>

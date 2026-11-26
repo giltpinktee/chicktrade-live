@@ -84,6 +84,12 @@ def compute_adx14(df: pd.DataFrame) -> np.ndarray:
 
 
 def compute_storm_cooldown(df: pd.DataFrame, cooldown_bars: int) -> Tuple[np.ndarray, np.ndarray]:
+    """v6.1 3-Tier Storm Guard (T1): Light 4h / Medium 12h / Severe 24h cooldown."""
+    bar_min = max(5, int(round((df["open_time_ms"].iloc[1] - df["open_time_ms"].iloc[0]) / 60_000))) if len(df) >= 2 else 15
+    b_light = max(1, int(round(4 * 60 / bar_min)))
+    b_med = max(1, int(round(12 * 60 / bar_min)))
+    b_heavy = max(1, int(round(24 * 60 / bar_min)))
+
     h, l, c, o = df["high"], df["low"], df["close"], df["open"]
     atr = compute_atr14(df)
     atr_ma50 = atr.rolling(50, min_periods=10).mean()
@@ -91,12 +97,20 @@ def compute_storm_cooldown(df: pd.DataFrame, cooldown_bars: int) -> Tuple[np.nda
     crange = (h - l).replace(0, np.nan)
     body = (c - o).abs()
     wick_frac = (1.0 - body / crange).fillna(0.0)
-    sweep = (crange >= 2.8 * atr) | ((crange >= 2.0 * atr) & (wick_frac >= 0.70))
     net_move = (c - c.shift(10)).abs()
     path_len = c.diff().abs().rolling(10, min_periods=10).sum().replace(0, np.nan)
     er = (net_move / path_len).fillna(0.5)
-    raw = (atr_ratio >= 1.8) | sweep | ((er < 0.15) & (atr_ratio >= 1.20))
-    return (raw.astype(int).rolling(cooldown_bars, min_periods=1).max() > 0).values, atr_ratio.values
+
+    heavy = (atr_ratio >= 2.8) | (crange >= 4.0 * atr)
+    med = (atr_ratio >= 2.2) | (crange >= 2.8 * atr) | ((crange >= 2.0 * atr) & (wick_frac >= 0.70))
+    light = (atr_ratio >= 1.8) | ((er < 0.15) & (atr_ratio >= 1.20))
+
+    cd = (
+        (light.astype(int).rolling(b_light, min_periods=1).max() > 0)
+        | (med.astype(int).rolling(b_med, min_periods=1).max() > 0)
+        | (heavy.astype(int).rolling(b_heavy, min_periods=1).max() > 0)
+    )
+    return cd.values, atr_ratio.values
 
 
 def real_funding_u(

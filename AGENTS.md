@@ -1,15 +1,15 @@
-# AGENTS.md — CHICKTRADE v6.0 Complete AI Context & Quantitative Specification
+# AGENTS.md — CHICKTRADE v6.1 Complete AI Context & Quantitative Specification
 
-> **Purpose:** Read this file first if you are an AI coding agent (Antigravity, Claude Code, Codex, Cursor, Windsurf) or quant engineer cloning `giltpinktee/chicktrade-live`. It contains every mathematical formula, execution rule, historical decision, and directory boundary needed to understand and extend **CHICKTRADE v6.0** with zero guesswork.
+> **Purpose:** Read this file first if you are an AI coding agent (Antigravity, Claude Code, Codex, Cursor, Windsurf) or quant engineer cloning `giltpinktee/chicktrade-live`. It contains every mathematical formula, execution rule, historical decision, and directory boundary needed to understand and extend **CHICKTRADE v6.1** with zero guesswork.
 
 ---
 
-## 1. Executive Summary (CHICKTRADE v6.0)
-- **System:** Systematic Binance USD-M Futures EMA-pullback & wave-exhaustion strategy across **7 Coins** (`BTCUSDT`, `ETHUSDT`, `BNBUSDT`, `LINKUSDT`, `XRPUSDT`, `SOLUSDT`, `NEARUSDT`), **68 ACTIVE setups + 1 BENCH_WATCH setup** (`NEARUSDT 1h EMA34_W4_REV`), `15m / 30m / 1h` only (`5m` permanently excluded).
+## 1. Executive Summary (CHICKTRADE v6.1)
+- **System:** Systematic Binance USD-M Futures EMA-pullback & wave-exhaustion strategy across **7 Coins** (`BTCUSDT`, `ETHUSDT`, `BNBUSDT`, `LINKUSDT`, `XRPUSDT`, `SOLUSDT`, `NEARUSDT`), **68 ACTIVE setups + 1 BENCH_WATCH setup** (`NEARUSDT 1h EMA34_W4_REV`), `15m / 30m / 1h` only (`5m` permanently excluded), with **3-Tier Storm Guard T1 (`4h / 12h / 24h`)**.
 - **Verified 36-Month Performance (`2023-11-01 → 2026-10-31`, 2021–2023 warmup, `$10,000` initial capital, Argon-Audited Binance-Exact Engine):**
-  - **Bao 400G (Safe · S2 Step-Locked):** `$10,000 → $351,815.46` (`+3,418.2%`) · MaxDD `-11.56%` · Calmar `295.7` · PF `1.66` · PWR `62.4%` · `1,369` trades (`S5 Pessimistic`: `$268,624`, `+2,586%`, DD `-12.05%`, PF `1.58`).
-  - **Auto-Turbo 250G (ON ≥ +25%, 110% Armor → 400G):** `$10,000 → $618,457.10` (`+6,084.6%`) · MaxDD `-18.98%` · Calmar `320.6` · PF `1.46` (`S5 Pessimistic`: `$494,436`, `+4,844%`, DD `-19.43%`).
-  - **Optional Mid-Risk Turbo Frontiers (same 68 setups):** `Turbo 350G` = `$441,897` (DD `-13.34%`, PF `1.59`) · `Turbo 320G` = `$490,897` (DD `-14.27%`, Calmar `337.0`, PF `1.54`).
+  - **Bao 400G (Safe · S2 Step-Locked):** `$10,000 → $233,697.36` (`+2,237.0%`) · MaxDD `-11.26%` · Calmar `198.6` · PF `1.63` · PWR `61.9%` · `1,062` trades (`S5 Pessimistic`: `$184,511`, `+1,745%`, DD `-11.65%`, PF `1.56`).
+  - **Auto-Turbo 250G (ON ≥ +25%, 110% Armor → 400G):** `$10,000 → $551,868.99` (`+5,418.7%`) · MaxDD `-15.32%` · Calmar `353.7` · PF `1.54` (`S5 Pessimistic`: `$442,558`, `+4,326%`, DD `-16.67%`, PF `1.47`).
+  - **Optional Mid-Risk Turbo Frontiers (same 68 setups):** `Turbo 350G` = `$316,652` (DD `-13.52%`, PF `1.61`) · `Turbo 320G` = `$375,967` (DD `-13.63%`, Calmar `268.5`, PF `1.59`).
 
 ---
 
@@ -24,7 +24,10 @@ $$u_{\text{px}} = \text{EntryPrice} \times u_{\text{frac}}(\text{TF})$$
 ### 2.2 Signal Generation (EMA 34 / 89 / 200 × Touches W1–W3 & W4_REV)
 - **HTF Trend Filter:** `1h` trend for `15m` signals; `4h` trend for `30m/1h` signals.
 - **Wave Counting:** Continuous converged EMA 34/89/200 touches (`W1, W2, W3` with-trend; `W4_REV` counter-trend exhaustion).
-- **Storm Guard Cooldown:** Both BTC and local symbol ATR-spike cooldowns suppress entries during flash crashes.
+- **3-Tier Storm Guard Cooldown (T1, applied on BOTH BTC & local symbol):**
+  - **Light Storm (`4h`):** `ATR_ratio >= 1.8` or High-Vol Chop (`ER_10 < 0.15` & `ATR_ratio >= 1.20`).
+  - **Medium Storm (`12h`):** `ATR_ratio >= 2.2` or Liquidity Sweep (`range >= 2.8 * ATR` or (`range >= 2.0 * ATR` & `wick >= 70%`)).
+  - **Severe Storm (`24h`):** Flash Crash (`ATR_ratio >= 2.8` or `range >= 4.0 * ATR`).
 - **Elevated Volatility Guard:** If local `ATR_ratio >= 1.35`, effective volume multiplier is halved (`× 0.5`).
 
 ### 2.3 Argon-Audited Binance-Exact Trade Execution (`build_v6_master.py`)

@@ -263,7 +263,10 @@ def compute_adx14(df: pd.DataFrame) -> np.ndarray:
 
 
 def compute_storm_cooldown(df: pd.DataFrame, cooldown_bars: int) -> Tuple[np.ndarray, np.ndarray]:
-    """Return (cooldown_mask, atr_ratio) matching backtest 2-layer Storm Guard."""
+    """Return (cooldown_mask, atr_ratio) matching v6.1 3-Tier Storm Guard T1 (4h / 12h / 24h)."""
+    b_light = max(1, int(cooldown_bars))
+    b_med = max(1, int(cooldown_bars) * 3)
+    b_heavy = max(1, int(cooldown_bars) * 6)
     high, low, close, open_ = df["high"], df["low"], df["close"], df["open"]
     atr = compute_atr14(df)
     atr_ma50 = atr.rolling(50, min_periods=10).mean()
@@ -271,12 +274,19 @@ def compute_storm_cooldown(df: pd.DataFrame, cooldown_bars: int) -> Tuple[np.nda
     crange = (high - low).replace(0, np.nan)
     body = (close - open_).abs()
     wick_frac = (1.0 - body / crange).fillna(0.0)
-    sweep_candle = (crange >= 2.8 * atr) | ((crange >= 2.0 * atr) & (wick_frac >= 0.70))
     net_move = (close - close.shift(10)).abs()
     path_len = close.diff().abs().rolling(10, min_periods=10).sum().replace(0, np.nan)
     er = (net_move / path_len).fillna(0.5)
-    raw_storm = (atr_ratio >= 1.8) | sweep_candle | ((er < 0.15) & (atr_ratio >= 1.20))
-    cd_mask = (raw_storm.astype(int).rolling(cooldown_bars, min_periods=1).max() > 0).values
+
+    heavy = (atr_ratio >= 2.8) | (crange >= 4.0 * atr)
+    med = (atr_ratio >= 2.2) | (crange >= 2.8 * atr) | ((crange >= 2.0 * atr) & (wick_frac >= 0.70))
+    light = (atr_ratio >= 1.8) | ((er < 0.15) & (atr_ratio >= 1.20))
+
+    cd_mask = (
+        (light.astype(int).rolling(b_light, min_periods=1).max() > 0)
+        | (med.astype(int).rolling(b_med, min_periods=1).max() > 0)
+        | (heavy.astype(int).rolling(b_heavy, min_periods=1).max() > 0)
+    ).values
     return cd_mask, atr_ratio.values
 
 
